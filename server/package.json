@@ -1,0 +1,17 @@
+{
+  "name": "recruitflow-server",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.63.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.19.2",
+    "nanoid": "^5.0.7"
+  }
+}

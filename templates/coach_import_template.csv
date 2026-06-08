@@ -1,0 +1,2 @@
+school,division,conference,city,state,staffPageUrl,questionnaireUrl,programSummary,coachName,title,email,phone,xHandle,positionGroups,recruitingStates,sourceUrl,lastVerified,confidence,notes
+Example Academic University,D3,Example Conference,Example City,TX,https://example.edu/athletics/football/staff,https://example.edu/recruiting/questionnaire,Replace with factual program notes.,Alex Receiver,Wide Receivers Coach,,,@coachhandle,"WR|Wide Receivers|Pass Game",TX,https://example.edu/athletics/football/staff,2026-06-05,low,Demo row; replace before real use.
