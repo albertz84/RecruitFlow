@@ -1,51 +1,35 @@
 # Draft Generation Changes
 
-This version separates the expensive part from the cheap part.
+This version keeps the data model simple.
 
-## What is cached
+## What is stored
 
-Cached/saved:
-
-- School records
-- Coach records
-- Coach emails
-- Staff page URLs
-- Recruiting questionnaire URLs
-- Anthropic web-search enrichment results
-
-These live in:
+Stored data lives in:
 
 ```txt
 server/data/schools.json
 server/data/coaches.json
-server/data/cache.json
+server/data/recruitflow.sqlite
 ```
 
-## What is not cached anymore
+`schools.json` and `coaches.json` are the local school database.
+`recruitflow.sqlite` stores connected Gmail users, saved athlete profile snapshots, and user-facing email history rows.
 
-Generated email text is not reused as a hard cache anymore.
+## What is not used anymore
 
-Every time the user clicks generate, the backend creates a fresh draft using the configured draft provider:
+- Web-search enrichment
+- Cache-backed school lookups
+- Separate draft-history JSON storage as a product feature
 
-```txt
-DRAFT_PROVIDER=gemini | anthropic | local | auto
-```
-
-Generated drafts are still saved as history in:
-
-```txt
-server/data/generated-drafts.json
-```
-
-That file is for audit/history, not for avoiding model calls.
+The app now only generates emails from the local school JSON data plus the athlete profile.
 
 ## Why
 
-Coach/school research is the hard and expensive part. Email writing is cheap once the app already has the athlete profile, school info, and recommended contacts.
+This keeps the workflow predictable and removes the parts that are expensive, hard to verify, or unnecessary for the MVP.
 
 ## Rewrite buttons
 
-The frontend now supports:
+The frontend still supports:
 
 ```txt
 Make shorter
@@ -62,5 +46,3 @@ These call:
 ```txt
 POST /api/rewrite-draft
 ```
-
-Rewrites do not use web search. They only use the configured draft-writing provider.

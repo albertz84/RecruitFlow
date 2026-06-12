@@ -1,13 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import crypto from "node:crypto";
 import { config, resolvedDraftProvider } from "./config.js";
-import { buildSchoolDraftPrompt, buildEnrichmentPrompt, buildRewritePrompt } from "./prompts.js";
+import { buildSchoolDraftPrompt, buildRewritePrompt, draftSystemPrompt, rewriteSystemPrompt } from "./prompts.js";
 import { buildLocalDraft, buildLocalRewrite } from "./localTemplate.js";
 import { contactPlanSummary } from "./contactRules.js";
-import { getCache, setCacheValue, upsertCoaches, addSchool } from "./database.js";
 
-function hash(value) {
-  return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24);
+function xUrl(handle = "") {
+  const cleanHandle = String(handle || "").trim().replace(/^@/, "");
+  return cleanHandle ? `https://x.com/${cleanHandle}` : "";
 }
 
 const draftPackSchema = {
@@ -129,9 +128,6 @@ async function callDraftJson({ prompt, system, maxTokens = 2500, temperature = 0
 export async function generateDraftsForSchool({ profile, school, contacts, programSummary }) {
   const plan = contactPlanSummary(profile, contacts);
 
-  // Important: drafts are NOT cached. Coach/school research is cached, but the
-  // actual email writing step is intentionally fresh because it should be cheap
-  // and because users expect regenerate/rewrite to produce a new draft.
   const localOutput = () => ({
     program_summary: programSummary || school.programSummary || "Saved database context was used. Add a program summary for stronger personalization.",
     drafts: contacts.map(coach => buildLocalDraft({ profile, school, coach, programSummary })),
@@ -160,7 +156,7 @@ export async function generateDraftsForSchool({ profile, school, contacts, progr
       maxTokens: 1700,
       temperature: 0.65,
       schema: draftPackSchema,
-      system: "You write accurate, realistic college football recruiting outreach. Every email must be individually curated for this exact coach. Return only valid JSON."
+      system: draftSystemPrompt
     });
 
     const parsed = result.parsed;
@@ -207,7 +203,7 @@ export async function rewriteDraft({ profile, school, contact, draft, action }) 
     maxTokens: action === "dm_version" ? 900 : 1800,
     temperature: 0.55,
     schema: rewriteSchema,
-    system: "You rewrite football recruiting outreach. Preserve facts. Return only valid JSON."
+    system: rewriteSystemPrompt
   });
 
   if (!result) return localOutput();
@@ -221,6 +217,8 @@ export async function rewriteDraft({ profile, school, contact, draft, action }) 
       coach_name: draft.coach_name || contact?.name || "Coach",
       coach_title: draft.coach_title || contact?.title || "Football Staff",
       coach_email: draft.coach_email ?? contact?.email ?? null,
+      coach_x_handle: draft.coach_x_handle || contact?.xHandle || "",
+      coach_x_url: draft.coach_x_url || xUrl(contact?.xHandle),
       email_lookup_tip: parsed.email_lookup_tip || draft.email_lookup_tip || "",
       draft_source: `rewrite:${action}`
     },
@@ -228,51 +226,4 @@ export async function rewriteDraft({ profile, school, contact, draft, action }) 
     usage: result.usage,
     draftCached: false
   };
-}
-
-export async function enrichSchoolWithWebSearch({ schoolName, division }) {
-  const cacheKey = `enrich:${hash({ schoolName, division })}`;
-  const cache = await getCache();
-  if (cache[cacheKey]) return { ...cache[cacheKey].value, cacheHit: true };
-
-  const api = anthropicClient();
-  if (!api) {
-    return {
-      skipped: true,
-      reason: "ANTHROPIC_API_KEY is not configured. Add the school and coaches manually or import a CSV.",
-      school: null,
-      coaches: []
-    };
-  }
-
-  const message = await api.messages.create({
-    model: config.anthropicResearchModel,
-    max_tokens: 2200,
-    temperature: 0.2,
-    system: "You extract current college football staff/contact data. Use web search. Return only JSON. Never invent emails.",
-    messages: [{ role: "user", content: buildEnrichmentPrompt({ schoolName, division }) }],
-    tools: [{
-      type: "web_search_20250305",
-      name: "web_search",
-      max_uses: config.maxWebSearchUsesPerSchool
-    }]
-  });
-
-  const parsed = parseJsonText(textFromAnthropicMessage(message));
-  let school = null;
-  if (parsed.school?.name) {
-    school = await addSchool(parsed.school);
-  }
-  const coaches = Array.isArray(parsed.coaches) ? parsed.coaches.map(c => ({ ...c, schoolId: school?.id })) : [];
-  if (school && coaches.length) await upsertCoaches(coaches);
-
-  const output = {
-    school,
-    coaches,
-    provider: "anthropic-web-search",
-    usage: message.usage || null,
-    cacheHit: false
-  };
-  await setCacheValue(cacheKey, output);
-  return output;
 }

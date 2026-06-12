@@ -13,8 +13,8 @@ server/dist/
 !**/.env.example
 
 # Runtime/generated app data
-server/data/cache.json
-server/data/generated-drafts.json
+server/data/recruitflow.sqlite
+server/data/recruitflow.sqlite-*
 
 # Logs
 *.log

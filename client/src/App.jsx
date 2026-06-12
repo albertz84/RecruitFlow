@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Copy, Database, Mail, Plus, RefreshCw, Search, Upload, Users, X } from "lucide-react";
+import { Check, Copy, Database, ExternalLink, History, LogOut, Mail, Plus, RefreshCw, Search, Trash2, Upload, Users, X } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8787";
 
@@ -11,6 +11,7 @@ const emptyProfile = {
   lastName: "",
   email: "",
   phone: "",
+  xHandle: "",
   gradYear: "2027",
   highSchool: "",
   city: "",
@@ -47,6 +48,32 @@ function api(path, options = {}) {
     if (!res.ok) throw new Error(data.error || `Request failed: ${res.status}`);
     return data;
   });
+}
+
+function storedUser() {
+  try { return JSON.parse(localStorage.getItem("recruitflow:gmailUser") || "null"); } catch { return null; }
+}
+
+function storedProfile(email = "") {
+  const keys = email ? [`recruitflow:profile:${email}`, "recruitflow:profile"] : ["recruitflow:profile"];
+  for (const key of keys) {
+    try {
+      const data = JSON.parse(localStorage.getItem(key) || "null");
+      if (data && typeof data === "object") return { ...emptyProfile, ...data };
+    } catch {}
+  }
+  return emptyProfile;
+}
+
+function gmailComposeUrl({ to, subject, body }) {
+  const params = new URLSearchParams({
+    view: "cm",
+    fs: "1",
+    to: to || "",
+    su: subject || "",
+    body: body || ""
+  });
+  return `https://mail.google.com/mail/?${params.toString()}`;
 }
 
 function Field({ label, required, children, hint }) {
@@ -90,12 +117,23 @@ function CopyButton({ text, label = "Copy" }) {
   return <button className="secondary small" onClick={copy}><Copy size={14}/>{copied ? "Copied" : label}</button>;
 }
 
+function xUrlFromHandle(handle = "") {
+  const cleanHandle = String(handle || "").trim().replace(/^@/, "");
+  return cleanHandle ? `https://x.com/${cleanHandle}` : "";
+}
+
+function CoachXLink({ handle, url }) {
+  const href = url || xUrlFromHandle(handle);
+  const label = handle || (href ? `@${href.split("/").filter(Boolean).pop()}` : "");
+  if (!href || !label) return null;
+  return <a className="xLink" href={href} target="_blank" rel="noopener noreferrer"><ExternalLink size={13}/>{label}</a>;
+}
+
 export default function App() {
-  const [profile, setProfile] = useState(emptyProfile);
+  const [profile, setProfile] = useState(() => storedProfile(storedUser()?.email));
   const [schools, setSchools] = useState([]);
   const [databaseSchools, setDatabaseSchools] = useState([]);
   const [schoolQuery, setSchoolQuery] = useState("");
-  const [allowWebResearch, setAllowWebResearch] = useState(false);
   const [maxContacts, setMaxContacts] = useState(3);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -104,12 +142,40 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [csv, setCsv] = useState("");
   const [adminMsg, setAdminMsg] = useState("");
+  const [view, setView] = useState("compose");
+  const [connectedUser, setConnectedUser] = useState(() => storedUser());
+  const [gmailEmail, setGmailEmail] = useState(() => storedUser()?.email || "");
+  const [gmailMsg, setGmailMsg] = useState("");
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     api("/api/health").then(setHealth).catch(() => setHealth(null));
     refreshStats();
     refreshSchools();
   }, []);
+
+  useEffect(() => {
+    if (connectedUser?.email) refreshHistory(connectedUser.email);
+  }, [connectedUser?.email]);
+
+  useEffect(() => {
+    localStorage.setItem("recruitflow:profile", JSON.stringify(profile));
+    if (connectedUser?.email) {
+      localStorage.setItem(`recruitflow:profile:${connectedUser.email}`, JSON.stringify(profile));
+    }
+  }, [profile, connectedUser?.email]);
+
+  useEffect(() => {
+    if (!connectedUser?.email) return;
+    const timeout = setTimeout(() => {
+      api("/api/user-profile", {
+        method: "PATCH",
+        body: JSON.stringify({ userEmail: connectedUser.email, profileSnapshot: profile })
+      }).catch(err => setGmailMsg(err.message));
+    }, 700);
+    return () => clearTimeout(timeout);
+  }, [profile, connectedUser?.email]);
 
   async function refreshStats() {
     try { setStats(await api("/api/stats")); } catch { setStats(null); }
@@ -125,6 +191,99 @@ export default function App() {
     }
   }
 
+  async function connectGmail() {
+    setGmailMsg("");
+    const email = gmailEmail.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      setGmailMsg("Enter the Gmail address you want to use for history.");
+      return;
+    }
+    try {
+      const data = await api("/api/connect-gmail", {
+        method: "POST",
+        body: JSON.stringify({ email, profileSnapshot: profile })
+      });
+      setConnectedUser(data.user);
+      localStorage.setItem("recruitflow:gmailUser", JSON.stringify(data.user));
+      if (data.user.profileSnapshot) {
+        setProfile(prev => ({ ...prev, ...data.user.profileSnapshot }));
+        localStorage.setItem(`recruitflow:profile:${data.user.email}`, JSON.stringify({ ...profile, ...data.user.profileSnapshot }));
+      }
+      setGmailMsg(`Connected as ${data.user.email}.`);
+    } catch (err) {
+      setGmailMsg(err.message);
+    }
+  }
+
+  function disconnectGmail() {
+    localStorage.removeItem("recruitflow:gmailUser");
+    setConnectedUser(null);
+    setHistory([]);
+    setGmailMsg("");
+  }
+
+  async function refreshHistory(email = connectedUser?.email) {
+    if (!email) return;
+    setHistoryLoading(true);
+    try {
+      const data = await api(`/api/email-history?userEmail=${encodeURIComponent(email)}`);
+      setHistory(data.history || []);
+    } catch (err) {
+      setGmailMsg(err.message);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function updateHistoryItem(id, updates) {
+    if (!connectedUser?.email) return null;
+    const data = await api(`/api/email-history/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ userEmail: connectedUser.email, ...updates })
+    });
+    setHistory(prev => prev.map(item => item.id === id ? data.item : item));
+    return data.item;
+  }
+
+  async function deleteHistoryItem(id) {
+    if (!connectedUser?.email) return;
+    await api(`/api/email-history/${id}?userEmail=${encodeURIComponent(connectedUser.email)}`, { method: "DELETE" });
+    setHistory(prev => prev.filter(item => item.id !== id));
+  }
+
+  function openGmailDraft({ draft, school }) {
+    if (!connectedUser?.email) {
+      setGmailMsg("Connect Gmail first so this draft is saved to your history.");
+      return;
+    }
+    const url = gmailComposeUrl({
+      to: draft.coach_email || "",
+      subject: draft.email_subject || "",
+      body: draft.email_body || ""
+    });
+    window.open(url, "_blank", "noopener,noreferrer");
+    if (draft.historyId) {
+      updateHistoryItem(draft.historyId, {
+        status: "opened_gmail",
+        email_subject: draft.email_subject || "",
+        email_body: draft.email_body || ""
+      }).catch(err => setGmailMsg(err.message));
+    }
+    if (!draft.coach_email) {
+      setGmailMsg(`Opened Gmail for ${school.name}. Add the coach email manually before sending.`);
+    }
+  }
+
+  function openHistoryInGmail(item) {
+    const url = gmailComposeUrl({
+      to: item.coach?.email || "",
+      subject: item.email_subject || "",
+      body: item.email_body || ""
+    });
+    window.open(url, "_blank", "noopener,noreferrer");
+    updateHistoryItem(item.id, { status: "opened_gmail" }).catch(err => setGmailMsg(err.message));
+  }
+
   const filteredDatabaseSchools = useMemo(() => {
     const needle = schoolQuery.trim().toLowerCase();
     const available = databaseSchools.filter(s => !schools.some(selected => selected.id === s.id));
@@ -135,7 +294,6 @@ export default function App() {
       .toLowerCase()
       .includes(needle));
   }, [databaseSchools, schools, schoolQuery]);
-  const visibleDatabaseSchools = filteredDatabaseSchools.slice(0, 12);
 
   const missing = useMemo(() => {
     const req = [
@@ -157,7 +315,7 @@ export default function App() {
     setProfile(prev => ({ ...prev, [field]: value }));
   }
 
-  function addTargetSchool(school = visibleDatabaseSchools[0]) {
+  function addTargetSchool(school = filteredDatabaseSchools[0]) {
     if (!school) return;
     if (schools.some(s => s.id === school.id)) return;
     setSchools(prev => [...prev, school]);
@@ -178,10 +336,12 @@ export default function App() {
         body: JSON.stringify({
           profile,
           schools,
-          options: { allowWebResearch, maxContacts }
+          options: { maxContacts },
+          user: connectedUser
         })
       });
       setResults(data.results || []);
+      if (connectedUser?.email) refreshHistory(connectedUser.email);
       refreshStats();
     } catch (err) {
       setError(err.message);
@@ -216,11 +376,38 @@ export default function App() {
       </div>
     </header>
 
+    <div className="workspaceBar">
+      <div className="viewTabs">
+        <button className={view === "compose" ? "tab active" : "tab"} onClick={() => setView("compose")}><Mail size={16}/>Compose</button>
+        <button className={view === "history" ? "tab active" : "tab"} onClick={() => setView("history")}><History size={16}/>Email history</button>
+      </div>
+      <div className="gmailConnect">
+        {connectedUser ? <>
+          <span className="connectedUser"><Check size={15}/>{connectedUser.email}</span>
+          <button className="secondary small" onClick={disconnectGmail}><LogOut size={14}/>Disconnect</button>
+        </> : <>
+          <input className="input gmailInput" value={gmailEmail} onChange={e => setGmailEmail(e.target.value)} placeholder="your@gmail.com" onKeyDown={e => e.key === "Enter" && connectGmail()}/>
+          <button className="primary smallBtn" onClick={connectGmail}><Mail size={15}/>Connect Gmail</button>
+          <span className="connectHint">MVP: opens Gmail compose, no inbox access.</span>
+        </>}
+      </div>
+    </div>
+    {gmailMsg && <p className="inlineNotice">{gmailMsg}</p>}
+
+    {view === "history" ? <HistoryPage
+      user={connectedUser}
+      history={history}
+      loading={historyLoading}
+      onRefresh={() => refreshHistory()}
+      onDelete={deleteHistoryItem}
+      onOpen={openHistoryInGmail}
+      onMarkSent={item => updateHistoryItem(item.id, { status: "sent" })}
+    /> : <>
     <div className="grid">
       <div className="leftCol">
         <Section title="Athlete profile" icon={<Users size={18}/>}> 
           <div className="two"><Field label="First name" required><TextInput value={profile.firstName} onChange={v => up("firstName", v)} placeholder="Albert"/></Field><Field label="Last name" required><TextInput value={profile.lastName} onChange={v => up("lastName", v)} placeholder="Zhou"/></Field></div>
-          <div className="two"><Field label="Email" required><TextInput value={profile.email} onChange={v => up("email", v)} placeholder="athlete@email.com"/></Field><Field label="Phone"><TextInput value={profile.phone} onChange={v => up("phone", v)} placeholder="(555) 123-4567"/></Field></div>
+          <div className="three"><Field label="Email" required><TextInput value={profile.email} onChange={v => up("email", v)} placeholder="athlete@email.com"/></Field><Field label="Phone"><TextInput value={profile.phone} onChange={v => up("phone", v)} placeholder="(555) 123-4567"/></Field><Field label="X / Twitter"><TextInput value={profile.xHandle} onChange={v => up("xHandle", v)} placeholder="@athlete"/></Field></div>
           <div className="four"><Field label="High school" required><TextInput value={profile.highSchool} onChange={v => up("highSchool", v)} placeholder="St. John's School"/></Field><Field label="City"><TextInput value={profile.city} onChange={v => up("city", v)} placeholder="Houston"/></Field><Field label="State"><Select value={profile.state} onChange={v => up("state", v)} options={STATES}/></Field><Field label="Grad year"><TextInput value={profile.gradYear} onChange={v => up("gradYear", v)} placeholder="2027"/></Field></div>
           <div className="four"><Field label="Position" required><Select value={profile.position} onChange={v => up("position", v)} options={POSITIONS}/></Field><Field label="Height"><TextInput value={profile.height} onChange={v => up("height", v)} placeholder={`6'0"`}/></Field><Field label="Weight"><TextInput value={profile.weight} onChange={v => up("weight", v)} placeholder="173"/></Field><Field label="40"><TextInput value={profile.fortyYard} onChange={v => up("fortyYard", v)} placeholder="4.65"/></Field></div>
           <div className="four"><Field label="Bench"><TextInput value={profile.benchPress} onChange={v => up("benchPress", v)} placeholder="225"/></Field><Field label="Squat"><TextInput value={profile.squat} onChange={v => up("squat", v)} placeholder="365"/></Field><Field label="Vertical"><TextInput value={profile.vertical} onChange={v => up("vertical", v)} placeholder="32"/></Field><Field label="Shuttle"><TextInput value={profile.shuttle} onChange={v => up("shuttle", v)} placeholder="4.25"/></Field></div>
@@ -243,7 +430,7 @@ export default function App() {
               {schoolQuery && <button className="textButton" onClick={() => setSchoolQuery("")}>Clear search</button>}
             </div>
             <div className="schoolList">
-              {visibleDatabaseSchools.map(s => <SchoolCard key={s.id} school={s} onSelect={addTargetSchool}/>)}
+              {filteredDatabaseSchools.map(s => <SchoolCard key={s.id} school={s} onSelect={addTargetSchool}/>)}
               {filteredDatabaseSchools.length === 0 && <p className="emptyState">No saved schools match that search.</p>}
             </div>
           </div>
@@ -253,7 +440,6 @@ export default function App() {
             {schools.length === 0 && <p className="muted">Select at least one saved school before generating outreach.</p>}
           </div>
           <div className="options">
-            <label className="check"><input type="checkbox" checked={allowWebResearch} onChange={e => setAllowWebResearch(e.target.checked)}/> Allow paid web research for missing schools</label>
             <Field label="Max contacts per school"><Select value={String(maxContacts)} onChange={v => setMaxContacts(Number(v))} options={["1","2","3","4"]}/></Field>
           </div>
           {error && <p className="error">{error}</p>}
@@ -278,18 +464,63 @@ export default function App() {
           <ul className="bullets">
             <li>Database hit: no web search cost.</li>
             <li>Regenerate/rewrite: fresh draft text, same saved contact data.</li>
-            <li>Missing school: optional paid enrichment only.</li>
+            <li>Missing school: add or import it before generating.</li>
             <li>No API key: local template drafts still work.</li>
           </ul>
         </Section>
       </aside>
     </div>
 
-    <Results results={results} setResults={setResults} profile={profile}/>
+    <Results results={results} setResults={setResults} profile={profile} connectedUser={connectedUser} onOpenGmail={openGmailDraft}/>
+    </>}
   </main>;
 }
 
-function Results({ results, setResults, profile }) {
+function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onMarkSent }) {
+  if (!user) {
+    return <section className="section historyPage">
+      <h2><History size={18}/>Email history</h2>
+      <p className="muted">Connect Gmail to save generated emails to a local history dashboard.</p>
+    </section>;
+  }
+
+  return <section className="section historyPage">
+    <div className="historyTop">
+      <div>
+        <h2><History size={18}/>Email history</h2>
+        <p className="muted">Tracked for {user.email}. MVP status tracks generated drafts, Gmail compose opens, and emails you manually mark as sent.</p>
+      </div>
+      <button className="secondary" onClick={onRefresh} disabled={loading}>{loading ? <RefreshCw className="spin" size={16}/> : <RefreshCw size={16}/>}Refresh</button>
+    </div>
+    {!history.length && <div className="emptyHistory">
+      <Mail size={28}/>
+      <strong>No generated emails yet</strong>
+      <span>Generate outreach from the Compose page and it will appear here.</span>
+    </div>}
+    <div className="historyList">
+      {history.map(item => <article className="historyItem" key={item.id}>
+        <div className="historyMain">
+          <div className="historyTitle">
+            <strong>{item.school?.name || "Unknown school"}</strong>
+            <span className={`statusTag ${item.status || "generated"}`}>{(item.status || "generated").replace("_", " ")}</span>
+          </div>
+          <p>{item.coach?.name || "Coach"}{item.coach?.title ? ` · ${item.coach.title}` : ""}</p>
+          <span className="contactMeta">{item.coach?.email || item.email_lookup_tip || "No coach email saved"}<CoachXLink handle={item.coach?.xHandle} url={item.coach?.xUrl}/></span>
+          <h3>{item.email_subject}</h3>
+          <p className="historyBody">{item.email_body}</p>
+          <small>Generated {new Date(item.createdAt).toLocaleString()}</small>
+        </div>
+        <div className="historyActions">
+          <button className="primary smallBtn" onClick={() => onOpen(item)}><ExternalLink size={14}/>Open in Gmail</button>
+          <button className="secondary small" onClick={() => onMarkSent(item)} disabled={item.status === "sent"}><Check size={14}/>Mark sent</button>
+          <button className="danger small" onClick={() => onDelete(item.id)}><Trash2 size={14}/>Delete</button>
+        </div>
+      </article>)}
+    </div>
+  </section>;
+}
+
+function Results({ results, setResults, profile, connectedUser, onOpenGmail }) {
   const [rewritingKey, setRewritingKey] = useState("");
   if (!results.length) return null;
 
@@ -341,12 +572,13 @@ function Results({ results, setResults, profile }) {
       <div className="quality"><span>{r.dataQuality.contactsInDatabase} DB contacts</span><span>{r.dataQuality.contactsWithEmails} selected emails</span><span>Confidence: {r.dataQuality.schoolConfidence}</span></div>
       {r.programSummary && <p className="summary">{r.programSummary}</p>}
       <h4>Recommended contact order</h4>
-      <div className="contacts">{r.contacts.map(c => <div className="contact" key={c.id}><strong>{c.name}</strong><span>{c.title}</span><small>{c.recommendedReason}</small>{c.email ? <code>{c.email}</code> : <em>No email saved</em>}</div>)}</div>
+      <div className="contacts">{r.contacts.map(c => <div className="contact" key={c.id}><strong>{c.name}</strong><span>{c.title}</span><small>{c.recommendedReason}</small><span className="contactMeta">{c.email ? <code>{c.email}</code> : <em>No email saved</em>}<CoachXLink handle={c.xHandle} url={c.xUrl}/></span></div>)}</div>
       <h4>Drafts</h4>
       <div className="drafts">{(r.drafts || []).map((d, j) => {
         const full = `To: ${d.coach_email || "[find email]"}\nSubject: ${d.email_subject}\n\n${d.email_body}`;
         return <div className="draft" key={`${d.coach_id || j}`}>
-          <div className="draftTop"><div><strong>{d.coach_name}</strong><span>{d.coach_title}</span>{d.coach_email ? <code>{d.coach_email}</code> : <em>{d.email_lookup_tip || "Find email manually"}</em>}</div><CopyButton text={full} label="Copy full"/></div>
+          <div className="draftTop"><div><strong>{d.coach_name}</strong><span>{d.coach_title}</span><span className="contactMeta">{d.coach_email ? <code>{d.coach_email}</code> : <em>{d.email_lookup_tip || "Find email manually"}</em>}<CoachXLink handle={d.coach_x_handle} url={d.coach_x_url}/></span></div><div className="draftActions"><button className="primary smallBtn" onClick={() => onOpenGmail?.({ draft: d, school: r.school })}><ExternalLink size={14}/>Open in Gmail</button><CopyButton text={full} label="Copy full"/></div></div>
+          {!connectedUser && <p className="muted compactNotice">Connect Gmail first if you want this email saved to your history.</p>}
           <div className="rewriteRow">
             {rewriteActions.map(([action, label]) => {
               const key = `${i}-${j}-${action}`;

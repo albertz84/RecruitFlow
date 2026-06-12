@@ -13,6 +13,11 @@ function measurementLine(profile) {
   return parts.join(", ");
 }
 
+function xUrl(handle = "") {
+  const cleanHandle = String(handle || "").trim().replace(/^@/, "");
+  return cleanHandle ? `https://x.com/${cleanHandle}` : "";
+}
+
 export function buildLocalDraft({ profile, school, coach, programSummary }) {
   const first = clean(profile.firstName, "");
   const last = clean(profile.lastName, "");
@@ -27,7 +32,7 @@ export function buildLocalDraft({ profile, school, coach, programSummary }) {
   const academics = [profile.gpaWeighted && `${profile.gpaWeighted} weighted GPA`, profile.sat && `${profile.sat} SAT`, profile.act && `${profile.act} ACT`].filter(Boolean).join(" and ");
   const schoolContext = programSummary || school?.programSummary || `I am interested in ${schoolName} because of the football program and academic environment.`;
   const hudl = clean(profile.hudlLink, "[Hudl link]");
-  const contactLine = [profile.email, profile.phone].filter(Boolean).join(" | ");
+  const contactLine = [profile.email, profile.phone, profile.xHandle].filter(Boolean).join(" | ");
 
   const subject = `${gradYear} ${position} ${name} — ${clean(profile.highSchool, "High School")}`;
   const body = `Hi ${coachName},\n\nMy name is ${name}, and I am a Class of ${gradYear} ${position} at ${clean(profile.highSchool, "my high school")}${profile.city || profile.state ? ` in ${[profile.city, profile.state].filter(Boolean).join(", ")}` : ""}. I wanted to reach out because I am very interested in ${schoolName}. ${schoolContext}\n\nAs a player, ${strengths}.${growth}${measurable ? ` My current profile is ${measurable}.` : ""}${academics ? ` Academically, I have a ${academics}.` : ""}\n\nHere is my film: ${hudl}\n\nI would really appreciate it if you could take a look at my film and let me know where I stand as a potential fit for your program. I would also be grateful for any feedback about what you would like to see from me this offseason.\n\nThank you for your time,\n${name}\n${contactLine}`;
@@ -37,6 +42,8 @@ export function buildLocalDraft({ profile, school, coach, programSummary }) {
     coach_name: coach?.name || "Coach",
     coach_title: coach?.title || "Football Staff",
     coach_email: coach?.email || null,
+    coach_x_handle: coach?.xHandle || "",
+    coach_x_url: xUrl(coach?.xHandle),
     email_lookup_tip: coach?.email ? "" : (school?.staffPageUrl || school?.questionnaireUrl || "Check the school's football staff directory and recruiting questionnaire."),
     email_subject: subject,
     email_body: body,
@@ -59,7 +66,7 @@ export function buildLocalRewrite({ profile, school, coach, draft, action }) {
   const gradYear = clean(profile?.gradYear, "2027");
   const schoolName = clean(school?.name, "your program");
   const hudl = clean(profile?.hudlLink, "[Hudl link]");
-  const contactLine = [profile?.email, profile?.phone].filter(Boolean).join(" | ");
+  const contactLine = [profile?.email, profile?.phone, profile?.xHandle].filter(Boolean).join(" | ");
   const greeting = coachGreeting(coach || { name: base.coach_name });
   const academics = [profile?.gpaWeighted && `${profile.gpaWeighted} GPA`, profile?.sat && `${profile.sat} SAT`, profile?.act && `${profile.act} ACT`].filter(Boolean).join(" | ");
   const strengths = clean(profile?.strengths, "I compete hard, learn quickly, and take coaching seriously");

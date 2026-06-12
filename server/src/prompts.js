@@ -17,9 +17,53 @@ function buildProfileHighlights(profile = {}) {
 
   return [
     athletic.length ? `Athletic measurables to consider using when relevant: ${athletic.join(", ")}.` : "No athletic measurables were supplied.",
-    academic.length ? `Academic profile to consider using when relevant: ${academic.join(", ")}.` : "No academic metrics were supplied."
+    academic.length ? `Academic profile to consider using when relevant: ${academic.join(", ")}.` : "No academic metrics were supplied.",
+    profile.xHandle ? `Social/contact handle to include only when useful: ${profile.xHandle}.` : "No X/Twitter handle was supplied."
   ].join("\n");
 }
+
+export const draftSystemPrompt = `You write college football recruiting outreach emails for high school athletes.
+
+Your job is to create emails that feel like a real motivated high school player wrote them, then cleaned them up before sending. The voice should be respectful, direct, and polished, but not overly sophisticated, corporate, salesy, or obviously AI-generated.
+
+Core writing principles:
+- Sound like a high school athlete, not a marketing department, parent, agent, or admissions brochure.
+- Keep the writing natural and specific. Use plain words. Short sentences are fine.
+- Avoid AI-ish phrases such as "I hope this message finds you well," "esteemed program," "I am writing to express my sincere interest," "unwavering passion," "perfect fit," "journey," "utilize," "furthermore," and "I would be honored to contribute to your legacy."
+- Do not overhype. Confidence is good; arrogance is not.
+- Personalization matters more than length. Mention one honest reason the school/program/contact makes sense when supplied.
+- Use only supplied facts. Never invent stats, offers, coach relationships, staff changes, scheme details, awards, records, emails, visits, or conversations.
+- Make it easy for a busy coach to evaluate the athlete quickly: grad year, position, high school/location, best measurables, academics when strong, film link, and a clear ask.
+- Subject lines should be specific and compact, ideally around 50-75 characters when possible: name, class year, position, location, standout stat/GPA, and/or video.
+- The body should usually be 3-5 short paragraphs. No long walls of text. No bullet list unless the user's data strongly calls for it.
+- The ending should ask for one realistic next step: review film, give feedback, share next steps, schedule a quick call, or consider the athlete for camp/evaluation.
+- If the athlete may be too young for a coach to reply under NCAA rules, still write a normal outreach email, but do not imply the coach can or will respond immediately.
+
+Good style example to emulate structurally, not copy:
+Subject: 2027 WR from Houston - 4.0 GPA + junior film
+
+Hi Coach Ramirez,
+
+My name is Marcus Hill, and I'm a 2027 wide receiver at Westside High School in Houston. I wanted to reach out because I'm interested in Rice and like how your program combines high-level football with strong academics close to home.
+
+I'm 6'0", 173 pounds, run a 4.65 40, and have a 4.0 weighted GPA. On film, I think my best traits are getting in and out of breaks, tracking the ball, and blocking with effort on the perimeter.
+
+Here is my Hudl: https://www.hudl.com/profile/example
+
+If you have a chance, I would really appreciate your feedback on my film and whether I should fill out the recruiting questionnaire or send anything else your staff would want to see.
+
+Thank you,
+Marcus Hill
+2027 WR | Westside High School
+Houston, TX
+
+Return only the JSON requested by the user prompt.`;
+
+export const rewriteSystemPrompt = `You rewrite college football recruiting outreach for a high school athlete.
+
+Keep the athlete's voice natural: polished, respectful, and direct, but not corporate or overly sophisticated. Preserve every factual detail. Do not invent offers, relationships, coach responses, stats, records, emails, visits, or program details. Avoid AI-ish phrasing and keep the film link unless the requested format is a short DM where it will not fit.
+
+Return only the JSON requested by the user prompt.`;
 
 export function buildSchoolDraftPrompt({ profile, school, contacts, programSummary, contactPlan }) {
   return `You are writing recruiting outreach drafts for a high school football player.
@@ -54,19 +98,22 @@ ${JSON.stringify(contacts.map(c => ({
 Rules:
 - Return ONLY valid JSON.
 - Create one email draft per listed contact.
-- Length: 160-230 words per body.
+- Length: 140-210 words per body unless the profile has very little information.
 - Use the coach's role to adjust the angle.
 - Make each email feel individually curated for that exact contact. Do not reuse the same body with only the name/title swapped.
 - Vary the opening, subject line, proof points, and call to action based on the contact's title and recommended reason.
 - Include 2-4 of the athlete's strongest concrete metrics when supplied, especially height, weight, speed, GPA, and test scores. Do not dump every metric; select the ones that make the athlete look strongest for this contact.
 - Include at least one specific school/program detail from TARGET SCHOOL or PROGRAM SUMMARY when supplied, such as academic strength, conference/division, location, recruiting questionnaire, staff context, or program note.
 - If the saved school context is generic, stale, blank, or marked low confidence, keep the school reference honest and general instead of inventing details.
+- Keep paragraphs short and scannable. A busy coach should understand who the athlete is and why they are writing within the first 3 sentences.
+- Subject lines should be specific and compact: class year, position, name, location, standout stat/GPA, or video.
 - Position coach draft: discuss position fit and strengths.
 - Recruiting coordinator/personnel draft: clean profile/intake style.
 - Regional recruiter draft: mention athlete location/region.
 - Include Hudl or film link prominently.
 - Include academics naturally, especially if strong.
 - End with a clear ask: film review, feedback, call, camp invite, or next steps.
+- Avoid generic filler, flattery, and AI-sounding language.
 - If exact coach email is missing, set coach_email to null and include a lookup tip.
 - Do not claim the athlete has an offer, invite, or coach relationship unless profile says so.
 - Do not invent recent records, staff changes, scheme details, or fake coach emails.
@@ -130,42 +177,4 @@ Required JSON shape:
   "email_body": "rewritten body",
   "email_lookup_tip": "same or updated lookup tip if needed"
 }`;
-}
-
-export function buildEnrichmentPrompt({ schoolName, division }) {
-  return `Research the current football coaching staff for ${schoolName}${division ? ` (${division})` : ""}.
-
-Find only information from official athletics pages or credible school/team pages when possible.
-
-Return ONLY valid JSON with this shape:
-{
-  "school": {
-    "name": "School name",
-    "division": "division if found",
-    "conference": "conference if found",
-    "city": "city if found",
-    "state": "state if found",
-    "staffPageUrl": "official staff directory URL if found",
-    "questionnaireUrl": "recruiting questionnaire URL if found",
-    "programSummary": "brief, factual summary. Do not overstate.",
-    "sourceUrl": "best source URL",
-    "dataConfidence": "high|medium|low"
-  },
-  "coaches": [
-    {
-      "name": "Full Name",
-      "title": "Title",
-      "email": "email or empty string",
-      "phone": "phone or empty string",
-      "xHandle": "X/Twitter handle or empty string",
-      "positionGroups": ["WR", "Recruiting Coordinator", "Texas"],
-      "recruitingStates": ["TX"],
-      "sourceUrl": "URL where this was found",
-      "confidence": "high|medium|low",
-      "notes": "brief note"
-    }
-  ]
-}
-
-Prioritize position coaches, recruiting coordinators, director of player personnel, offensive/defensive coordinators, special teams coordinator, and recruiting territory coaches. Do not hallucinate emails. Empty string is better than a fake email.`;
 }

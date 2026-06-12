@@ -6,12 +6,17 @@ import {
   findSchoolByName,
   addSchool,
   coachesForSchool,
-  saveDraft,
+  saveEmailHistoryEntries,
+  listEmailHistory,
+  updateEmailHistoryItem,
+  deleteEmailHistoryItem,
+  upsertUser,
+  updateUserProfile,
   getCoaches,
   getSchools
 } from "./database.js";
 import { recommendContacts, contactPlanSummary } from "./contactRules.js";
-import { generateDraftsForSchool, enrichSchoolWithWebSearch, rewriteDraft } from "./anthropicClient.js";
+import { generateDraftsForSchool, rewriteDraft } from "./anthropicClient.js";
 import { importCoachCsv } from "./csvImport.js";
 
 const app = express();
@@ -32,9 +37,7 @@ app.get("/api/health", (req, res) => {
     geminiApiKeyConfigured: Boolean(config.geminiApiKey),
     anthropicApiKeyConfigured: Boolean(config.anthropicApiKey),
     geminiDraftModel: config.geminiDraftModel,
-    researchModel: config.anthropicResearchModel,
-    draftProvider,
-    allowWebResearchDefault: config.allowWebResearchDefault
+    draftProvider
   });
 });
 
@@ -67,6 +70,58 @@ app.get("/api/stats", async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+app.post("/api/connect-gmail", async (req, res, next) => {
+  try {
+    const { email, name, profileSnapshot } = req.body || {};
+    const user = await upsertUser({ email, name, profileSnapshot, provider: "gmail-compose-mvp" });
+    res.json({ user });
+  } catch (err) { next(err); }
+});
+
+app.patch("/api/user-profile", async (req, res, next) => {
+  try {
+    const { userEmail, profileSnapshot } = req.body || {};
+    const user = await updateUserProfile(userEmail, profileSnapshot || {});
+    res.json({ user });
+  } catch (err) { next(err); }
+});
+
+app.get("/api/email-history", async (req, res, next) => {
+  try {
+    const userEmail = req.query.userEmail;
+    res.json({ history: await listEmailHistory(userEmail) });
+  } catch (err) { next(err); }
+});
+
+app.patch("/api/email-history/:id", async (req, res, next) => {
+  try {
+    const { userEmail, status, email_subject, email_body } = req.body || {};
+    const updates = {};
+    if (status) {
+      if (!["generated", "opened_gmail", "sent"].includes(status)) {
+        return res.status(400).json({ error: "Invalid email history status." });
+      }
+      updates.status = status;
+      if (status === "opened_gmail") updates.openedAt = new Date().toISOString();
+      if (status === "sent") updates.sentAt = new Date().toISOString();
+    }
+    if (typeof email_subject === "string") updates.email_subject = email_subject;
+    if (typeof email_body === "string") updates.email_body = email_body;
+    const item = await updateEmailHistoryItem(req.params.id, userEmail, updates);
+    if (!item) return res.status(404).json({ error: "Email history item not found." });
+    res.json({ item });
+  } catch (err) { next(err); }
+});
+
+app.delete("/api/email-history/:id", async (req, res, next) => {
+  try {
+    const userEmail = req.query.userEmail || req.body?.userEmail;
+    const deleted = await deleteEmailHistoryItem(req.params.id, userEmail);
+    if (!deleted) return res.status(404).json({ error: "Email history item not found." });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
 app.post("/api/schools", async (req, res, next) => {
   try {
     const school = await addSchool(req.body || {});
@@ -83,23 +138,17 @@ app.post("/api/admin/import-coaches", async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-app.post("/api/enrich-school", async (req, res, next) => {
-  try {
-    const { schoolName, division } = req.body || {};
-    if (!schoolName) return res.status(400).json({ error: "schoolName is required" });
-    const result = await enrichSchoolWithWebSearch({ schoolName, division });
-    res.json(result);
-  } catch (err) { next(err); }
-});
-
 app.post("/api/generate", async (req, res, next) => {
   try {
-    const { profile, schools, options = {} } = req.body || {};
+    const { profile, schools, options = {}, user } = req.body || {};
     if (!profile) return res.status(400).json({ error: "profile is required" });
     if (!Array.isArray(schools) || schools.length === 0) return res.status(400).json({ error: "schools must be a non-empty array" });
 
-    const allowWebResearch = Boolean(options.allowWebResearch ?? config.allowWebResearchDefault);
-    const maxContacts = Number(options.maxContacts || config.maxContactsPerSchool || 3);
+    const requestedMaxContacts = Number(options.maxContacts);
+    const maxContacts = Number.isFinite(requestedMaxContacts)
+      ? Math.min(Math.max(requestedMaxContacts, 1), 4)
+      : Number(config.maxContactsPerSchool || 3);
+    const userEmail = String(user?.email || "").trim().toLowerCase();
     const resolvedSchools = [];
 
     for (const requested of schools) {
@@ -117,13 +166,7 @@ app.post("/api/generate", async (req, res, next) => {
     const results = [];
 
     for (const school of resolvedSchools) {
-      let webResearch = null;
-
       let coaches = await coachesForSchool(school.id);
-      if (coaches.length === 0 && allowWebResearch && !webResearch) {
-        webResearch = await enrichSchoolWithWebSearch({ schoolName: school.name, division: school.division });
-        coaches = await coachesForSchool(school.id);
-      }
 
       const contacts = recommendContacts({ profile, school, coaches, maxContacts });
       const contactPlan = contactPlanSummary(profile, contacts);
@@ -131,7 +174,7 @@ app.post("/api/generate", async (req, res, next) => {
         profile,
         school,
         contacts,
-        programSummary: school.programSummary,
+        programSummary: school.programSummary
       });
 
       const record = {
@@ -144,9 +187,7 @@ app.post("/api/generate", async (req, res, next) => {
           schoolConfidence: school.dataConfidence || "low",
           contactsInDatabase: coaches.length,
           contactsWithEmails: contacts.filter(c => c.email).length,
-          usedWebResearch: Boolean(webResearch),
-          provider: draftPack.provider,
-          draftCached: false
+          provider: draftPack.provider
         },
         lookupTips: {
           staffPageUrl: school.staffPageUrl || "",
@@ -154,7 +195,40 @@ app.post("/api/generate", async (req, res, next) => {
           sourceUrl: school.sourceUrl || ""
         }
       };
-      await saveDraft({ profileSnapshot: profile, schoolId: school.id, record });
+      if (userEmail) {
+        const athleteName = [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim();
+        const contactsById = new Map(contacts.map(contact => [contact.id, contact]));
+        const historyEntries = await saveEmailHistoryEntries(draftPack.drafts.map(draft => ({
+          userEmail,
+          userName: user?.name || "",
+          athleteName,
+          profileSnapshot: profile,
+          school: {
+            id: school.id,
+            name: school.name,
+            division: school.division || "",
+            conference: school.conference || ""
+          },
+          coach: {
+            id: draft.coach_id || "",
+            name: draft.coach_name || "",
+            title: draft.coach_title || "",
+            email: draft.coach_email || null,
+            xHandle: draft.coach_x_handle || contactsById.get(draft.coach_id)?.xHandle || "",
+            xUrl: draft.coach_x_url || (contactsById.get(draft.coach_id)?.xHandle ? `https://x.com/${String(contactsById.get(draft.coach_id).xHandle).replace(/^@/, "")}` : "")
+          },
+          email_subject: draft.email_subject || "",
+          email_body: draft.email_body || "",
+          email_lookup_tip: draft.email_lookup_tip || "",
+          provider: draftPack.provider,
+          generatedAt: new Date().toISOString()
+        })));
+        const byCoachId = new Map(historyEntries.map(item => [item.coach.id, item.id]));
+        record.drafts = record.drafts.map((draft, index) => ({
+          ...draft,
+          historyId: byCoachId.get(draft.coach_id) || historyEntries[index]?.id || null
+        }));
+      }
       results.push(record);
     }
 

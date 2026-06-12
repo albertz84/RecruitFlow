@@ -4,8 +4,11 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "dev": "node --watch src/index.js",
-    "start": "node src/index.js"
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
+    "start": "node --disable-warning=ExperimentalWarning src/index.js"
+  },
+  "engines": {
+    "node": ">=24"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.63.0",

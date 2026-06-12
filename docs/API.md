@@ -34,25 +34,11 @@ Body:
 {
   "profile": { "firstName": "Albert", "position": "WR" },
   "schools": [{ "name": "Princeton University", "division": "D1 FCS" }],
-  "options": {
-    "allowWebResearch": false,
-    "maxContacts": 3
-  }
+  "user": { "email": "athlete@gmail.com" }
 }
 ```
 
-Returns one contact plan and fresh draft set per school. The draft text is saved to generated-drafts history, but it is not reused as a hard cache.
-
-## POST /api/enrich-school
-
-Body:
-
-```json
-{ "schoolName": "Example University", "division": "D3" }
-```
-
-Uses Anthropic web search if `ANTHROPIC_API_KEY` is set. This is intended for admin/fallback use, not every generation.
-
+Returns one contact plan and fresh draft set per school.
 
 ## POST /api/rewrite-draft
 
@@ -80,4 +66,4 @@ dm_version
 follow_up
 ```
 
-Uses the configured draft provider. It does not use web search and does not read/write the enrichment cache.
+Uses the configured draft provider and does not use web search.

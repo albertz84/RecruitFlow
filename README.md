@@ -6,10 +6,9 @@ The main cost-saving idea is simple:
 
 ```txt
 target school -> saved coach database -> contact ranking -> draft emails
-                                      -> optional paid research only when needed
 ```
 
-The app can run without any model API key by using local email templates. Add Gemini or Anthropic keys only when you want AI-written drafts, rewrite buttons, or paid web-search enrichment.
+The app can run without any model API key by using local email templates. Add Gemini or Anthropic keys only when you want AI-written drafts or rewrite buttons.
 
 ## Features
 
@@ -23,7 +22,7 @@ The app can run without any model API key by using local email templates. Add Ge
 - Rewrite actions for tone, length, academics, football focus, DMs, and follow-ups
 - Local template fallback when no API key is configured
 - Optional Gemini draft writing
-- Optional Anthropic draft writing and web-search enrichment
+- Optional Anthropic draft writing
 
 ## Project Structure
 
@@ -44,7 +43,7 @@ RecruitFlow/
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 24+
 - npm
 
 ## Setup
@@ -100,14 +99,6 @@ GEMINI_DRAFT_MODEL=gemini-2.5-flash-lite
 
 ANTHROPIC_API_KEY=
 ANTHROPIC_DRAFT_MODEL=claude-sonnet-4-20250514
-ANTHROPIC_RESEARCH_MODEL=claude-sonnet-4-20250514
-```
-
-Cost controls:
-
-```txt
-ALLOW_WEB_RESEARCH_DEFAULT=false
-MAX_WEB_SEARCH_USES_PER_SCHOOL=2
 MAX_CONTACTS_PER_SCHOOL=3
 ```
 
@@ -133,8 +124,8 @@ server/data/coaches.json
 Generated runtime files are ignored by Git:
 
 ```txt
-server/data/cache.json
-server/data/generated-drafts.json
+server/data/recruitflow.sqlite
+server/data/recruitflow.sqlite-*
 ```
 
 Those files are recreated as the app runs.
