@@ -128,7 +128,7 @@ server/data/recruitflow.sqlite
 server/data/recruitflow.sqlite-*
 ```
 
-Those files are recreated as the app runs.
+Those files are recreated as the app runs. On a hosted server, set `DATABASE_PATH` to a file path on persistent storage, such as `/var/data/recruitflow.sqlite`.
 
 ## CSV Import
 

@@ -7,13 +7,17 @@ import { nanoid } from "nanoid";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "..", "data");
+const DATABASE_PATH = process.env.DATABASE_PATH
+  ? path.resolve(process.env.DATABASE_PATH)
+  : path.join(DATA_DIR, "recruitflow.sqlite");
 const paths = {
   schools: path.join(DATA_DIR, "schools.json"),
   coaches: path.join(DATA_DIR, "coaches.json"),
-  database: path.join(DATA_DIR, "recruitflow.sqlite")
+  database: DATABASE_PATH
 };
 
 fsSync.mkdirSync(DATA_DIR, { recursive: true });
+fsSync.mkdirSync(path.dirname(paths.database), { recursive: true });
 
 const db = new DatabaseSync(paths.database);
 db.exec("PRAGMA foreign_keys = ON");
