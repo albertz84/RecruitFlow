@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Copy, Database, ExternalLink, History, LogOut, Mail, Plus, RefreshCw, Search, Trash2, Upload, Users, X } from "lucide-react";
+import { Check, Clock, Copy, Database, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Upload, Users, X } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8787";
 
 const POSITIONS = ["QB","RB","FB","WR","TE","OT","OG","C","DE","DT","NT","ILB","OLB","CB","FS","SS","K","P","LS","ATH"];
 const STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
+const SCHOOL_PAGE_SIZE = 18;
 
 const emptyProfile = {
   firstName: "",
@@ -33,6 +34,7 @@ const emptyProfile = {
   additionalFilm: "",
   strengths: "",
   weaknesses: "",
+  customInstructions: "",
   additionalNotes: ""
 };
 
@@ -52,6 +54,14 @@ function api(path, options = {}) {
 
 function storedUser() {
   try { return JSON.parse(localStorage.getItem("recruitflow:gmailUser") || "null"); } catch { return null; }
+}
+
+function storedTheme() {
+  try {
+    return localStorage.getItem("recruitflow:theme") === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
 }
 
 function storedProfile(email = "") {
@@ -96,15 +106,26 @@ function Section({ title, icon, children }) {
   return <section className="section"><h2>{icon}{title}</h2>{children}</section>;
 }
 
-function SchoolCard({ school, onSelect }) {
-  return <button className="schoolCard" onClick={() => onSelect(school)}>
-    <span className="schoolCardIcon"><Plus size={16}/></span>
-    <span className="schoolCardMain">
+function SchoolResultRow({ school, onSelect }) {
+  return <button className="schoolResultRow" onClick={() => onSelect(school)}>
+    <span className="schoolResultMark"><Plus size={15}/></span>
+    <span className="schoolResultMain">
       <strong>{school.name}</strong>
       <span>{[school.division, school.conference].filter(Boolean).join(" · ") || "Saved school"}</span>
     </span>
-    {(school.city || school.state) && <span className="schoolLocation">{[school.city, school.state].filter(Boolean).join(", ")}</span>}
+    <span className="schoolResultLocation">{[school.city, school.state].filter(Boolean).join(", ") || "Location TBD"}</span>
   </button>;
+}
+
+function TargetSchoolItem({ school, onRemove }) {
+  return <article className="targetSchoolItem">
+    <div>
+      <strong>{school.name}</strong>
+      <span>{[school.division, school.conference].filter(Boolean).join(" · ") || "Saved school"}</span>
+      {(school.city || school.state) && <small>{[school.city, school.state].filter(Boolean).join(", ")}</small>}
+    </div>
+    <button className="iconButton" onClick={onRemove} aria-label={`Remove ${school.name}`}><X size={15}/></button>
+  </article>;
 }
 
 function CopyButton({ text, label = "Copy" }) {
@@ -129,14 +150,66 @@ function CoachXLink({ handle, url }) {
   return <a className="xLink" href={href} target="_blank" rel="noopener noreferrer"><ExternalLink size={13}/>{label}</a>;
 }
 
+function formatSeconds(seconds = 0) {
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  if (safeSeconds < 60) return `${safeSeconds}s`;
+  const minutes = Math.floor(safeSeconds / 60);
+  const remaining = safeSeconds % 60;
+  return `${minutes}m ${remaining.toString().padStart(2, "0")}s`;
+}
+
+function estimateGenerationSeconds({ schoolCount, maxContacts, provider }) {
+  const contacts = Math.max(1, schoolCount) * Math.max(1, maxContacts);
+  const providerMultiplier = provider === "local-template" ? 0.3 : 1;
+  const low = Math.ceil((6 + contacts * 3.2) * providerMultiplier);
+  const high = Math.ceil((12 + contacts * 6.5) * providerMultiplier);
+  return {
+    low: Math.max(provider === "local-template" ? 3 : 12, low),
+    high: Math.max(provider === "local-template" ? 8 : 25, high)
+  };
+}
+
+function GenerationWait({ schoolCount, maxContacts, provider, elapsedSeconds }) {
+  const estimate = estimateGenerationSeconds({ schoolCount, maxContacts, provider });
+  const estimateMidpoint = (estimate.low + estimate.high) / 2;
+  const progress = Math.min(94, Math.max(8, Math.round((elapsedSeconds / estimateMidpoint) * 82)));
+  const totalDrafts = schoolCount * maxContacts;
+  const message = elapsedSeconds < 4
+    ? "Preparing coach contact plans"
+    : elapsedSeconds < estimate.low
+      ? "Writing personalized email drafts"
+      : "Still working through the selected schools";
+
+  return <div className="generationWait" role="status" aria-live="polite">
+    <div className="waitTop">
+      <div className="waitSpinner"><RefreshCw className="spin" size={20}/></div>
+      <div>
+        <strong>{message}</strong>
+        <span>{schoolCount} school{schoolCount === 1 ? "" : "s"} · up to {totalDrafts} email{totalDrafts === 1 ? "" : "s"}</span>
+      </div>
+    </div>
+    <div className="waitBar"><span style={{ width: `${progress}%` }} /></div>
+    <div className="waitMeta">
+      <span><Clock size={14}/>Elapsed {formatSeconds(elapsedSeconds)}</span>
+      <span>Typical range {formatSeconds(estimate.low)}-{formatSeconds(estimate.high)}</span>
+    </div>
+  </div>;
+}
+
 export default function App() {
+  const [theme, setTheme] = useState(() => storedTheme());
   const [profile, setProfile] = useState(() => storedProfile(storedUser()?.email));
   const [schools, setSchools] = useState([]);
   const [databaseSchools, setDatabaseSchools] = useState([]);
   const [schoolQuery, setSchoolQuery] = useState("");
+  const [schoolDivision, setSchoolDivision] = useState("All");
+  const [schoolStateFilter, setSchoolStateFilter] = useState("All");
+  const [visibleSchoolCount, setVisibleSchoolCount] = useState(SCHOOL_PAGE_SIZE);
   const [maxContacts, setMaxContacts] = useState(3);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [loadingStartedAt, setLoadingStartedAt] = useState(null);
   const [error, setError] = useState("");
   const [stats, setStats] = useState(null);
   const [health, setHealth] = useState(null);
@@ -154,6 +227,11 @@ export default function App() {
     refreshStats();
     refreshSchools();
   }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("recruitflow:theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     if (connectedUser?.email) refreshHistory(connectedUser.email);
@@ -176,6 +254,18 @@ export default function App() {
     }, 700);
     return () => clearTimeout(timeout);
   }, [profile, connectedUser?.email]);
+
+  useEffect(() => {
+    setVisibleSchoolCount(SCHOOL_PAGE_SIZE);
+  }, [schoolQuery, schoolDivision, schoolStateFilter, schools.length]);
+
+  useEffect(() => {
+    if (!loading || !loadingStartedAt) return;
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - loadingStartedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [loading, loadingStartedAt]);
 
   async function refreshStats() {
     try { setStats(await api("/api/stats")); } catch { setStats(null); }
@@ -284,16 +374,42 @@ export default function App() {
     updateHistoryItem(item.id, { status: "opened_gmail" }).catch(err => setGmailMsg(err.message));
   }
 
+  const availableSchools = useMemo(() => (
+    databaseSchools.filter(s => !schools.some(selected => selected.id === s.id))
+  ), [databaseSchools, schools]);
+
+  const divisionOptions = useMemo(() => {
+    const order = ["D1 FBS", "D1 FCS", "D2", "D3"];
+    const found = [...new Set(databaseSchools.map(s => s.division).filter(Boolean))];
+    return ["All", ...order.filter(item => found.includes(item)), ...found.filter(item => !order.includes(item)).sort()];
+  }, [databaseSchools]);
+
+  const stateOptions = useMemo(() => {
+    const found = [...new Set(databaseSchools.map(s => s.state).filter(Boolean))].sort();
+    return ["All", ...found];
+  }, [databaseSchools]);
+
+  const nearbySchools = useMemo(() => (
+    availableSchools
+      .filter(s => profile.state && s.state === profile.state)
+      .slice(0, 6)
+  ), [availableSchools, profile.state]);
+
   const filteredDatabaseSchools = useMemo(() => {
     const needle = schoolQuery.trim().toLowerCase();
-    const available = databaseSchools.filter(s => !schools.some(selected => selected.id === s.id));
-    if (!needle) return available;
-    return available.filter(s => [s.name, s.shortName, s.division, s.conference, s.city, s.state]
+    return availableSchools.filter(s => {
+      if (schoolDivision !== "All" && s.division !== schoolDivision) return false;
+      if (schoolStateFilter !== "All" && s.state !== schoolStateFilter) return false;
+      if (!needle) return true;
+      return [s.name, s.shortName, s.division, s.conference, s.city, s.state]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
-      .includes(needle));
-  }, [databaseSchools, schools, schoolQuery]);
+      .includes(needle);
+    });
+  }, [availableSchools, schoolDivision, schoolQuery, schoolStateFilter]);
+
+  const visibleDatabaseSchools = filteredDatabaseSchools.slice(0, visibleSchoolCount);
 
   const missing = useMemo(() => {
     const req = [
@@ -329,6 +445,8 @@ export default function App() {
       return;
     }
     setLoading(true);
+    setLoadingStartedAt(Date.now());
+    setElapsedSeconds(0);
     setResults([]);
     try {
       const data = await api("/api/generate", {
@@ -347,6 +465,7 @@ export default function App() {
       setError(err.message);
     } finally {
       setLoading(false);
+      setLoadingStartedAt(null);
     }
   }
 
@@ -373,6 +492,10 @@ export default function App() {
       <div className="statusPills">
         <span className={health?.draftProvider && health.draftProvider !== "local-template" ? "pill good" : "pill warn"}>Draft provider: {health?.draftProvider || "local"}</span>
         <span className="pill">{stats ? `${stats.schools} schools · ${stats.coaches} coaches` : "Loading database"}</span>
+        <button className="themeToggle" onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
+          {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
+          <span>{theme === "dark" ? "Light" : "Dark"}</span>
+        </button>
       </div>
     </header>
 
@@ -401,6 +524,7 @@ export default function App() {
       onRefresh={() => refreshHistory()}
       onDelete={deleteHistoryItem}
       onOpen={openHistoryInGmail}
+      onSave={updateHistoryItem}
       onMarkSent={item => updateHistoryItem(item.id, { status: "sent" })}
     /> : <>
     <div className="grid">
@@ -416,33 +540,81 @@ export default function App() {
           <Field label="Additional film"><TextInput value={profile.additionalFilm} onChange={v => up("additionalFilm", v)} placeholder="YouTube, MaxPreps, camp clips"/></Field>
           <Field label="Strengths" required><TextArea rows={3} value={profile.strengths} onChange={v => up("strengths", v)} placeholder="What makes you stand out? Position-specific traits, film highlights, captaincy, speed, route running, toughness..."/></Field>
           <Field label="Areas of growth"><TextArea rows={2} value={profile.weaknesses} onChange={v => up("weaknesses", v)} placeholder="What are you actively improving?"/></Field>
+          <div className="customInstructionsPanel">
+            <div className="customInstructionsHeader">
+              <strong>Custom email instructions</strong>
+              <span>Personal story, injury comeback, special request, or details you want included</span>
+            </div>
+            <TextArea rows={4} value={profile.customInstructions} onChange={v => up("customInstructions", v)} placeholder="Example: Mention that I missed part of junior year with a shoulder injury, came back for the final 4 games, and would like feedback on whether I should attend their summer camp."/>
+          </div>
           <Field label="Extra context"><TextArea rows={2} value={profile.additionalNotes} onChange={v => up("additionalNotes", v)} placeholder="Academic interests, camps attended, coach relationship, visit plans..."/></Field>
         </Section>
 
         <Section title="Target schools" icon={<Search size={18}/>}> 
-          <div className="schoolSearch">
-            <Search size={17}/>
-            <TextInput value={schoolQuery} onChange={setSchoolQuery} placeholder="Search by school, conference, city, or state" onKeyDown={e => e.key === "Enter" && addTargetSchool()}/>
-          </div>
-          <div className="schoolPicker">
-            <div className="schoolPickerHeader">
-              <span>{filteredDatabaseSchools.length ? `${filteredDatabaseSchools.length} available schools` : "No matching schools"}</span>
-              {schoolQuery && <button className="textButton" onClick={() => setSchoolQuery("")}>Clear search</button>}
+          <div className="targetBuilder">
+            <div className="targetBuilderHeader">
+              <div>
+                <strong>Build your outreach list</strong>
+                <span>Pick the schools you want emails for. Selected schools stay here while you search.</span>
+              </div>
+              <div className="targetCounter">
+                <strong>{schools.length}</strong>
+                <span>selected</span>
+              </div>
             </div>
-            <div className="schoolList">
-              {filteredDatabaseSchools.map(s => <SchoolCard key={s.id} school={s} onSelect={addTargetSchool}/>)}
-              {filteredDatabaseSchools.length === 0 && <p className="emptyState">No saved schools match that search.</p>}
+
+            <div className={schools.length ? "targetSelection hasItems" : "targetSelection"}>
+              {schools.length ? schools.map(s => <TargetSchoolItem key={s.id} school={s} onRemove={() => setSchools(prev => prev.filter(x => x.id !== s.id))}/>) : <div className="targetEmpty">
+                <Check size={18}/>
+                <span>No target schools selected yet</span>
+              </div>}
             </div>
-          </div>
-          <div className="selectedSchools">
-            <div className="selectedHeader"><Check size={16}/><span>{schools.length ? `${schools.length} selected` : "No schools selected yet"}</span></div>
-            <div className="chips">{schools.map(s => <button key={s.id} className="chip" onClick={() => setSchools(prev => prev.filter(x => x.id !== s.id))}>{s.name}<small>{s.division}</small><X size={14}/></button>)}</div>
-            {schools.length === 0 && <p className="muted">Select at least one saved school before generating outreach.</p>}
+
+            <div className="schoolFinderPanel">
+              <div className="finderTopline">
+                <div className="finderSearch">
+                  <Search size={17}/>
+                  <TextInput value={schoolQuery} onChange={setSchoolQuery} placeholder="Search schools, conferences, cities, or states" onKeyDown={e => e.key === "Enter" && addTargetSchool()}/>
+                </div>
+                <label className="finderState">
+                  <MapPin size={15}/>
+                  <select value={schoolStateFilter} onChange={e => setSchoolStateFilter(e.target.value)}>
+                    {stateOptions.map(state => <option key={state} value={state}>{state === "All" ? "All states" : state}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="finderFilters">
+                <span><Filter size={14}/>Level</span>
+                <div className="finderPills">
+                  {divisionOptions.map(division => <button key={division} className={schoolDivision === division ? "finderPill active" : "finderPill"} onClick={() => setSchoolDivision(division)}>{division}</button>)}
+                </div>
+                {(schoolQuery || schoolDivision !== "All" || schoolStateFilter !== "All") && <button className="clearFinder" onClick={() => { setSchoolQuery(""); setSchoolDivision("All"); setSchoolStateFilter("All"); }}>Clear</button>}
+              </div>
+
+              {nearbySchools.length > 0 && schoolStateFilter === "All" && !schoolQuery && schools.length === 0 && <div className="nearbyStrip">
+                <span><MapPin size={14}/>Near {profile.state}</span>
+                <div>
+                  {nearbySchools.slice(0, 4).map(s => <button key={s.id} onClick={() => addTargetSchool(s)}>{s.name}</button>)}
+                </div>
+              </div>}
+
+              <div className="schoolResultsHeader">
+                <strong>{filteredDatabaseSchools.length ? `${filteredDatabaseSchools.length} matches` : "No matches"}</strong>
+                <span>{filteredDatabaseSchools.length ? `Showing ${visibleDatabaseSchools.length}` : "Try a different search or filter"}</span>
+              </div>
+              <div className="schoolResultList">
+                {visibleDatabaseSchools.map(s => <SchoolResultRow key={s.id} school={s} onSelect={addTargetSchool}/>)}
+                {filteredDatabaseSchools.length === 0 && <p className="emptyState">No saved schools match those filters.</p>}
+              </div>
+              {visibleDatabaseSchools.length < filteredDatabaseSchools.length && <button className="showMoreSchools" onClick={() => setVisibleSchoolCount(count => count + SCHOOL_PAGE_SIZE)}>Show {Math.min(SCHOOL_PAGE_SIZE, filteredDatabaseSchools.length - visibleDatabaseSchools.length)} more</button>}
+            </div>
           </div>
           <div className="options">
             <Field label="Max contacts per school"><Select value={String(maxContacts)} onChange={v => setMaxContacts(Number(v))} options={["1","2","3","4"]}/></Field>
           </div>
           {error && <p className="error">{error}</p>}
+          {loading && <GenerationWait schoolCount={schools.length} maxContacts={maxContacts} provider={health?.draftProvider || "local-template"} elapsedSeconds={elapsedSeconds}/>}
           <button className="generate" disabled={loading} onClick={generate}>{loading ? <RefreshCw className="spin" size={18}/> : <Mail size={18}/>} {loading ? "Generating..." : `Generate contact plans + AI emails`}</button>
         </Section>
       </div>
@@ -476,7 +648,16 @@ export default function App() {
   </main>;
 }
 
-function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onMarkSent }) {
+function historyStatus(item) {
+  return item.status === "sent" ? "sent" : "draft";
+}
+
+function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSave, onMarkSent }) {
+  const [filter, setFilter] = useState("all");
+  const [editingId, setEditingId] = useState("");
+  const [draftEdit, setDraftEdit] = useState({ email_subject: "", email_body: "" });
+  const [savingId, setSavingId] = useState("");
+
   if (!user) {
     return <section className="section historyPage">
       <h2><History size={18}/>Email history</h2>
@@ -484,38 +665,92 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onMa
     </section>;
   }
 
+  const sentCount = history.filter(item => historyStatus(item) === "sent").length;
+  const draftCount = history.length - sentCount;
+  const visibleHistory = history.filter(item => {
+    if (filter === "drafts") return historyStatus(item) === "draft";
+    if (filter === "sent") return historyStatus(item) === "sent";
+    return true;
+  });
+
+  function startEditing(item) {
+    setEditingId(item.id);
+    setDraftEdit({
+      email_subject: item.email_subject || "",
+      email_body: item.email_body || ""
+    });
+  }
+
+  async function saveEdit(item) {
+    setSavingId(item.id);
+    try {
+      await onSave(item.id, draftEdit);
+      setEditingId("");
+    } finally {
+      setSavingId("");
+    }
+  }
+
   return <section className="section historyPage">
     <div className="historyTop">
       <div>
         <h2><History size={18}/>Email history</h2>
-        <p className="muted">Tracked for {user.email}. MVP status tracks generated drafts, Gmail compose opens, and emails you manually mark as sent.</p>
+        <p className="muted">Tracked for {user.email}. Drafts stay editable here. To actually send, open the draft in Gmail and send it there, then mark it sent here.</p>
       </div>
       <button className="secondary" onClick={onRefresh} disabled={loading}>{loading ? <RefreshCw className="spin" size={16}/> : <RefreshCw size={16}/>}Refresh</button>
+    </div>
+    <div className="historySummary">
+      <button className={filter === "all" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("all")}><strong>{history.length}</strong><span>All emails</span></button>
+      <button className={filter === "drafts" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("drafts")}><strong>{draftCount}</strong><span>Drafts</span></button>
+      <button className={filter === "sent" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("sent")}><strong>{sentCount}</strong><span>Marked sent</span></button>
     </div>
     {!history.length && <div className="emptyHistory">
       <Mail size={28}/>
       <strong>No generated emails yet</strong>
       <span>Generate outreach from the Compose page and it will appear here.</span>
     </div>}
+    {history.length > 0 && visibleHistory.length === 0 && <div className="emptyHistory compact">
+      <Mail size={24}/>
+      <strong>No emails in this view</strong>
+      <span>Switch filters to see the rest of your history.</span>
+    </div>}
     <div className="historyList">
-      {history.map(item => <article className="historyItem" key={item.id}>
-        <div className="historyMain">
-          <div className="historyTitle">
-            <strong>{item.school?.name || "Unknown school"}</strong>
-            <span className={`statusTag ${item.status || "generated"}`}>{(item.status || "generated").replace("_", " ")}</span>
+      {visibleHistory.map(item => {
+        const status = historyStatus(item);
+        const isEditing = editingId === item.id;
+        return <article className="historyItem" key={item.id}>
+          <div className="historyMain">
+            <div className="historyTitle">
+              <strong>{item.school?.name || "Unknown school"}</strong>
+              <span className={`statusTag ${status}`}>{status}</span>
+            </div>
+            <div className="historyMetaGrid">
+              <span><b>Coach</b>{item.coach?.name || "Coach"}{item.coach?.title ? ` · ${item.coach.title}` : ""}</span>
+              <span><b>To</b>{item.coach?.email || item.email_lookup_tip || "No coach email saved"}<CoachXLink handle={item.coach?.xHandle} url={item.coach?.xUrl}/></span>
+              <span><b>School</b>{[item.school?.division, item.school?.conference].filter(Boolean).join(" · ") || "Saved school"}</span>
+            </div>
+            {item.status === "opened_gmail" && status === "draft" && <p className="historyNote">Opened in Gmail, but still tracked as a draft until you mark it sent.</p>}
+            {isEditing ? <div className="historyEditor">
+              <Field label="Subject"><TextInput value={draftEdit.email_subject} onChange={v => setDraftEdit(prev => ({ ...prev, email_subject: v }))}/></Field>
+              <Field label="Body"><TextArea rows={9} value={draftEdit.email_body} onChange={v => setDraftEdit(prev => ({ ...prev, email_body: v }))}/></Field>
+            </div> : <>
+              <h3>{item.email_subject}</h3>
+              <p className="historyBody">{item.email_body}</p>
+            </>}
+            <small>Generated {new Date(item.createdAt).toLocaleString()}{item.sentAt ? ` · Marked sent ${new Date(item.sentAt).toLocaleString()}` : ""}</small>
           </div>
-          <p>{item.coach?.name || "Coach"}{item.coach?.title ? ` · ${item.coach.title}` : ""}</p>
-          <span className="contactMeta">{item.coach?.email || item.email_lookup_tip || "No coach email saved"}<CoachXLink handle={item.coach?.xHandle} url={item.coach?.xUrl}/></span>
-          <h3>{item.email_subject}</h3>
-          <p className="historyBody">{item.email_body}</p>
-          <small>Generated {new Date(item.createdAt).toLocaleString()}</small>
-        </div>
-        <div className="historyActions">
-          <button className="primary smallBtn" onClick={() => onOpen(item)}><ExternalLink size={14}/>Open in Gmail</button>
-          <button className="secondary small" onClick={() => onMarkSent(item)} disabled={item.status === "sent"}><Check size={14}/>Mark sent</button>
-          <button className="danger small" onClick={() => onDelete(item.id)}><Trash2 size={14}/>Delete</button>
-        </div>
-      </article>)}
+          <div className="historyActions">
+            <button className="primary smallBtn" onClick={() => onOpen(item)}><ExternalLink size={14}/>Open in Gmail</button>
+            {status === "draft" && (isEditing ? <>
+              <button className="secondary small" onClick={() => saveEdit(item)} disabled={savingId === item.id}>{savingId === item.id ? <RefreshCw className="spin" size={14}/> : <Check size={14}/>}Save edits</button>
+              <button className="secondary small" onClick={() => setEditingId("")}>Cancel</button>
+            </> : <button className="secondary small" onClick={() => startEditing(item)}><Copy size={14}/>Edit draft</button>)}
+            <button className="secondary small" onClick={() => onMarkSent(item)} disabled={status === "sent"}><Check size={14}/>{status === "sent" ? "Sent" : "Mark as sent"}</button>
+            {status === "draft" && <small className="actionHint">Tracker only. Send from Gmail first.</small>}
+            <button className="danger small" onClick={() => onDelete(item.id)}><Trash2 size={14}/>Delete</button>
+          </div>
+        </article>;
+      })}
     </div>
   </section>;
 }

@@ -18,7 +18,9 @@ function buildProfileHighlights(profile = {}) {
   return [
     athletic.length ? `Athletic measurables to consider using when relevant: ${athletic.join(", ")}.` : "No athletic measurables were supplied.",
     academic.length ? `Academic profile to consider using when relevant: ${academic.join(", ")}.` : "No academic metrics were supplied.",
-    profile.xHandle ? `Social/contact handle to include only when useful: ${profile.xHandle}.` : "No X/Twitter handle was supplied."
+    profile.xHandle ? `Social/contact handle to include only when useful: ${profile.xHandle}.` : "No X/Twitter handle was supplied.",
+    profile.customInstructions ? `User custom email instructions to follow naturally: ${profile.customInstructions}` : "No custom email instructions were supplied.",
+    profile.additionalNotes ? `Additional athlete context to consider if useful: ${profile.additionalNotes}` : "No extra context was supplied."
   ].join("\n");
 }
 
@@ -33,6 +35,8 @@ Core writing principles:
 - Do not overhype. Confidence is good; arrogance is not.
 - Personalization matters more than length. Mention one honest reason the school/program/contact makes sense when supplied.
 - Use only supplied facts. Never invent stats, offers, coach relationships, staff changes, scheme details, awards, records, emails, visits, or conversations.
+- Follow the athlete's custom email instructions when they are supplied, such as an injury comeback story, personal background, academic interest, camp request, visit plan, or a specific question they want included. Work it in naturally and briefly; do not make the whole email about it unless the instruction clearly asks for that.
+- If custom instructions conflict with other supplied facts or ask you to claim something not provided, ignore the conflicting part instead of inventing.
 - Make it easy for a busy coach to evaluate the athlete quickly: grad year, position, high school/location, best measurables, academics when strong, film link, and a clear ask.
 - Subject lines should be specific and compact, ideally around 50-75 characters when possible: name, class year, position, location, standout stat/GPA, and/or video.
 - The body should usually be 3-5 short paragraphs. No long walls of text. No bullet list unless the user's data strongly calls for it.
@@ -76,6 +80,12 @@ ${JSON.stringify(profile, null, 2)}
 PROFILE HIGHLIGHTS
 ${buildProfileHighlights(profile)}
 
+CUSTOM EMAIL INSTRUCTIONS
+${profile.customInstructions || "No custom email instructions were supplied."}
+
+ADDITIONAL CONTEXT
+${profile.additionalNotes || "No extra context was supplied."}
+
 TARGET SCHOOL
 ${JSON.stringify(school, null, 2)}
 
@@ -112,6 +122,8 @@ Rules:
 - Regional recruiter draft: mention athlete location/region.
 - Include Hudl or film link prominently.
 - Include academics naturally, especially if strong.
+- Follow CUSTOM EMAIL INSTRUCTIONS when supplied. Include injury stories, personal stories, special requests, camp questions, academic interests, or context in a way that sounds like the athlete wrote it.
+- Keep custom instruction content concise unless the athlete specifically asks for a longer story.
 - End with a clear ask: film review, feedback, call, camp invite, or next steps.
 - Avoid generic filler, flattery, and AI-sounding language.
 - If exact coach email is missing, set coach_email to null and include a lookup tip.
@@ -154,6 +166,9 @@ ${actionInstructions[action] || actionInstructions.shorter}
 ATHLETE PROFILE
 ${JSON.stringify(profile, null, 2)}
 
+CUSTOM EMAIL INSTRUCTIONS
+${profile.customInstructions || "No custom email instructions were supplied."}
+
 SCHOOL
 ${JSON.stringify(school, null, 2)}
 
@@ -168,6 +183,7 @@ Rules:
 - Preserve factual details.
 - Do not invent offers, relationships, coach responses, stats, records, or emails.
 - Keep the athlete's voice natural.
+- Preserve and follow the athlete's custom email instructions when supplied, unless they conflict with known facts.
 - Include the film link unless making a very short DM and it would not fit.
 - If coach email is missing, do not invent it.
 
