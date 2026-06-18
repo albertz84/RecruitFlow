@@ -433,12 +433,6 @@ export default function App() {
     return ["All", ...found];
   }, [databaseSchools]);
 
-  const nearbySchools = useMemo(() => (
-    availableSchools
-      .filter(s => profile.state && s.state === profile.state)
-      .slice(0, 6)
-  ), [availableSchools, profile.state]);
-
   const filteredDatabaseSchools = useMemo(() => {
     const needle = schoolQuery.trim().toLowerCase();
     return availableSchools.filter(s => {
@@ -624,13 +618,6 @@ export default function App() {
                 </div>
                 {(schoolQuery || schoolDivision !== "All" || schoolStateFilter !== "All") && <button className="clearFinder" onClick={() => { setSchoolQuery(""); setSchoolDivision("All"); setSchoolStateFilter("All"); }}>Clear</button>}
               </div>
-
-              {nearbySchools.length > 0 && schoolStateFilter === "All" && !schoolQuery && schools.length === 0 && <div className="nearbyStrip">
-                <span><MapPin size={14}/>Near {profile.state}</span>
-                <div>
-                  {nearbySchools.slice(0, 4).map(s => <button key={s.id} onClick={() => addTargetSchool(s)}>{s.name}</button>)}
-                </div>
-              </div>}
 
               <div className="schoolResultsHeader">
                 <strong>{filteredDatabaseSchools.length ? `${filteredDatabaseSchools.length} matches` : "No matches"}</strong>

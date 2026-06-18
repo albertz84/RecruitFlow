@@ -212,7 +212,7 @@ h1 {
 
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(380px, .92fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -614,40 +614,6 @@ select.input { color-scheme: light; }
   background: transparent;
   border: 1px solid rgba(56, 217, 192, .24);
   font-weight: 800;
-}
-.nearbyStrip {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-  border-bottom: 1px solid rgba(154, 168, 186, .12);
-  background: rgba(240, 184, 75, .045);
-}
-.nearbyStrip > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--gold);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-.nearbyStrip div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-.nearbyStrip button {
-  min-height: 32px;
-  max-width: 100%;
-  padding: 6px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  color: var(--gold-text);
-  background: rgba(240, 184, 75, .09);
-  border: 1px solid rgba(240, 184, 75, .22);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .schoolResultsHeader {
   display: flex;
