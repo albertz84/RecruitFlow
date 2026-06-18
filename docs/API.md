@@ -30,11 +30,15 @@ Returns database coverage counts.
 
 ## GET /api/schools?q=rice
 
-Search local school database.
+Requires Google login. Searches the school database and returns limited school summary fields only.
 
 ## GET /api/coaches?schoolId=school-id
 
-Return coaches for one school.
+Requires Google login and admin access. Returns coach records for admin/database maintenance only.
+
+## POST /api/schools
+
+Requires Google login and admin access. Adds a school record.
 
 ## POST /api/admin/import-coaches
 

@@ -12,10 +12,6 @@ server/dist/
 !.env.example
 !**/.env.example
 
-# Runtime/generated app data
-server/data/recruitflow.sqlite
-server/data/recruitflow.sqlite-*
-
 # Logs
 *.log
 npm-debug.log*

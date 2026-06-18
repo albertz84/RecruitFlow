@@ -77,7 +77,7 @@ http://localhost:5173
 The backend runs at:
 
 ```txt
-http://localhost:8787
+http://localhost:3000
 ```
 
 ## Environment Variables
@@ -87,10 +87,10 @@ The backend reads `server/.env`. Start from the root `.env.example`.
 Useful defaults:
 
 ```txt
-PORT=8787
-HOST=127.0.0.1
+PORT=3000
+HOST=0.0.0.0
 CLIENT_ORIGIN=http://localhost:5173
-GOOGLE_REDIRECT_URI=http://localhost:8787/api/auth/google/callback
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
 SESSION_SECRET=change-this-to-a-long-random-string
 DRAFT_PROVIDER=auto
 ```
@@ -106,7 +106,7 @@ ADMIN_EMAILS=you@gmail.com
 Create a Google Cloud OAuth 2.0 Client ID for a web application. For local development, add this authorized redirect URI:
 
 ```txt
-http://localhost:8787/api/auth/google/callback
+http://localhost:3000/api/auth/google/callback
 ```
 
 For production, use your API domain instead:
@@ -121,6 +121,15 @@ Then set:
 CLIENT_ORIGIN=https://yourdomain.com
 GOOGLE_REDIRECT_URI=https://api.yourdomain.com/api/auth/google/callback
 ```
+
+Supabase production database:
+
+```txt
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+```
+
+Keep `SUPABASE_SERVICE_ROLE_KEY` on the Render backend only. Do not add it to Vercel.
 
 Draft writing options:
 
@@ -143,23 +152,28 @@ VITE_API_BASE=https://your-api-host.example.com
 
 RecruitFlow works with no API keys. If no draft provider is configured, the backend uses `local-template` mode and creates editable outreach drafts from the player profile, selected school, and saved coach data.
 
-## Data Files
+## Data Storage
 
-The useful seed database files are:
+Production data lives in Supabase Postgres. Create the tables with:
+
+```txt
+server/supabase/schema.sql
+```
+
+Then import the current seed data:
+
+```bash
+npm run import:supabase
+```
+
+The useful local seed files are still kept in Git:
 
 ```txt
 server/data/schools.json
 server/data/coaches.json
 ```
 
-Generated runtime files are ignored by Git:
-
-```txt
-server/data/recruitflow.sqlite
-server/data/recruitflow.sqlite-*
-```
-
-Those files are recreated as the app runs. On a hosted server, set `DATABASE_PATH` to a file path on persistent storage, such as `/var/data/recruitflow.sqlite`.
+If Supabase env vars are missing, the backend falls back to those JSON files for schools/coaches and in-memory user/history storage for local development. Production should use Supabase.
 
 ## CSV Import
 
@@ -212,7 +226,7 @@ npm start
 
 ## Deployment Notes
 
-For a public deployment, set `HOST=0.0.0.0`, use a real `SESSION_SECRET`, and keep the SQLite database on persistent storage via `DATABASE_PATH`.
+For a public deployment, leave `PORT` unset on Render, set `HOST=0.0.0.0` or omit it, use a real `SESSION_SECRET`, and set `SUPABASE_URL` plus `SUPABASE_SERVICE_ROLE_KEY` on Render.
 
 The frontend must call the deployed backend:
 

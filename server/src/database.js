@@ -1,82 +1,22 @@
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { nanoid } from "nanoid";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "..", "data");
-const DATABASE_PATH = process.env.DATABASE_PATH
-  ? path.resolve(process.env.DATABASE_PATH)
-  : path.join(DATA_DIR, "recruitflow.sqlite");
 const paths = {
   schools: path.join(DATA_DIR, "schools.json"),
-  coaches: path.join(DATA_DIR, "coaches.json"),
-  database: DATABASE_PATH
+  coaches: path.join(DATA_DIR, "coaches.json")
 };
 
-fsSync.mkdirSync(DATA_DIR, { recursive: true });
-fsSync.mkdirSync(path.dirname(paths.database), { recursive: true });
+const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "";
+const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+const SUPABASE_PAGE_SIZE = 1000;
 
-const db = new DatabaseSync(paths.database);
-db.exec("PRAGMA foreign_keys = ON");
-db.exec("PRAGMA journal_mode = WAL");
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    gmail_email TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    provider TEXT NOT NULL DEFAULT 'gmail-compose-mvp',
-    profile_json TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    last_seen_at TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS emails (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'generated',
-    athlete_name TEXT,
-    school_id TEXT,
-    school_name TEXT,
-    school_division TEXT,
-    school_conference TEXT,
-    coach_id TEXT,
-    coach_name TEXT,
-    coach_title TEXT,
-    coach_email TEXT,
-    coach_x_handle TEXT,
-    coach_x_url TEXT,
-    email_subject TEXT NOT NULL DEFAULT '',
-    email_body TEXT NOT NULL DEFAULT '',
-    email_lookup_tip TEXT,
-    provider TEXT,
-    profile_json TEXT,
-    generated_at TEXT,
-    opened_at TEXT,
-    sent_at TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_emails_user_created ON emails (user_id, created_at DESC);
-  CREATE INDEX IF NOT EXISTS idx_users_email ON users (gmail_email);
-`);
-
-for (const statement of [
-  "ALTER TABLE users ADD COLUMN google_sub TEXT",
-  "ALTER TABLE users ADD COLUMN picture_url TEXT",
-  "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0"
-]) {
-  try { db.exec(statement); } catch (err) {
-    if (!String(err.message || "").includes("duplicate column name")) throw err;
-  }
-}
-
-db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users (google_sub) WHERE google_sub IS NOT NULL AND google_sub != ''");
+const memoryUsers = new Map();
+const memoryEmails = [];
 
 async function readJson(filePath, fallback) {
   try {
@@ -94,16 +34,133 @@ async function writeJson(filePath, value) {
 }
 
 function normalizeName(name = "") {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function parseJson(value, fallback = null) {
-  if (!value) return fallback;
+  if (value == null || value === "") return fallback;
+  if (typeof value === "object") return value;
   try { return JSON.parse(value); } catch { return fallback; }
 }
 
-function stringifyJson(value) {
-  return value == null ? null : JSON.stringify(value);
+function xUrl(handle = "") {
+  const cleanHandle = String(handle || "").trim().replace(/^@/, "");
+  return cleanHandle ? `https://x.com/${cleanHandle}` : "";
+}
+
+function mapSchool(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name || "",
+    shortName: row.short_name || row.shortName || row.name || "",
+    division: row.division || "",
+    conference: row.conference || "",
+    city: row.city || "",
+    state: row.state || "",
+    staffPageUrl: row.staff_page_url || row.staffPageUrl || "",
+    questionnaireUrl: row.questionnaire_url || row.questionnaireUrl || "",
+    programSummary: row.program_summary || row.programSummary || "",
+    lastVerified: row.last_verified || row.lastVerified || null,
+    sourceUrl: row.source_url || row.sourceUrl || "",
+    dataConfidence: row.data_confidence || row.dataConfidence || "low",
+    createdAt: row.created_at || row.createdAt,
+    updatedAt: row.updated_at || row.updatedAt
+  };
+}
+
+function toSchoolRow(school) {
+  return {
+    id: school.id,
+    name: school.name || "",
+    short_name: school.shortName || school.short_name || school.name || "",
+    division: school.division || "Unknown",
+    conference: school.conference || "",
+    city: school.city || "",
+    state: school.state || "",
+    staff_page_url: school.staffPageUrl || school.staff_page_url || "",
+    questionnaire_url: school.questionnaireUrl || school.questionnaire_url || "",
+    program_summary: school.programSummary || school.program_summary || "",
+    last_verified: school.lastVerified || school.last_verified || null,
+    source_url: school.sourceUrl || school.source_url || school.staffPageUrl || "",
+    data_confidence: school.dataConfidence || school.data_confidence || "low",
+    updated_at: new Date().toISOString()
+  };
+}
+
+function publicSchool(school) {
+  return {
+    id: school.id,
+    name: school.name,
+    shortName: school.shortName,
+    division: school.division,
+    conference: school.conference,
+    city: school.city,
+    state: school.state
+  };
+}
+
+function mapCoach(row) {
+  if (!row) return null;
+  const handle = row.x_handle || row.xHandle || row.twitter || "";
+  return {
+    id: row.id,
+    schoolId: row.school_id || row.schoolId || "",
+    name: row.name || "",
+    title: row.title || "",
+    email: row.email || "",
+    phone: row.phone || "",
+    xHandle: handle,
+    xUrl: row.x_url || row.xUrl || xUrl(handle),
+    positionGroups: parseList(row.position_groups || row.positionGroups || []),
+    recruitingStates: parseList(row.recruiting_states || row.recruitingStates || []),
+    sourceUrl: row.source_url || row.sourceUrl || "",
+    lastVerified: row.last_verified || row.lastVerified || null,
+    confidence: row.confidence || "medium",
+    notes: row.notes || "",
+    active: row.active !== false,
+    createdAt: row.created_at || row.createdAt,
+    updatedAt: row.updated_at || row.updatedAt
+  };
+}
+
+function cleanCoach(raw) {
+  return {
+    schoolId: raw.schoolId,
+    name: raw.name || "",
+    title: raw.title || "",
+    email: raw.email || "",
+    phone: raw.phone || "",
+    xHandle: raw.xHandle || raw.twitter || "",
+    positionGroups: Array.isArray(raw.positionGroups) ? raw.positionGroups : parseList(raw.positionGroups),
+    recruitingStates: Array.isArray(raw.recruitingStates) ? raw.recruitingStates : parseList(raw.recruitingStates),
+    sourceUrl: raw.sourceUrl || "",
+    lastVerified: raw.lastVerified || null,
+    confidence: raw.confidence || "medium",
+    notes: raw.notes || "",
+    active: raw.active !== false
+  };
+}
+
+function toCoachRow(coach) {
+  const cleaned = cleanCoach(coach);
+  return {
+    id: coach.id,
+    school_id: cleaned.schoolId,
+    name: cleaned.name,
+    title: cleaned.title,
+    email: cleaned.email,
+    phone: cleaned.phone,
+    x_handle: cleaned.xHandle,
+    position_groups: cleaned.positionGroups,
+    recruiting_states: cleaned.recruitingStates,
+    source_url: cleaned.sourceUrl,
+    last_verified: cleaned.lastVerified,
+    confidence: cleaned.confidence,
+    notes: cleaned.notes,
+    active: cleaned.active,
+    updated_at: new Date().toISOString()
+  };
 }
 
 function mapUser(row) {
@@ -123,13 +180,31 @@ function mapUser(row) {
   };
 }
 
-function mapEmail(row) {
+function userRowFromInput(input, existing = null) {
+  const email = String(input.email || existing?.gmail_email || "").trim().toLowerCase();
+  const now = new Date().toISOString();
+  return {
+    id: existing?.id || input.id || nanoid(),
+    gmail_email: email,
+    name: input.name || existing?.name || email.split("@")[0],
+    provider: input.provider || existing?.provider || "gmail-compose-mvp",
+    google_sub: input.googleSub || existing?.google_sub || "",
+    picture_url: input.pictureUrl || existing?.picture_url || "",
+    email_verified: input.emailVerified === true || Boolean(existing?.email_verified),
+    profile_json: existing?.profile_json || input.profileSnapshot || null,
+    created_at: existing?.created_at || now,
+    updated_at: now,
+    last_seen_at: now
+  };
+}
+
+function mapEmail(row, user = null) {
   if (!row) return null;
   return {
     id: row.id,
     status: row.status,
-    userEmail: row.gmail_email,
-    userName: row.user_name,
+    userEmail: user?.gmail_email || row.gmail_email || "",
+    userName: user?.name || row.user_name || "",
     athleteName: row.athlete_name || "",
     profileSnapshot: parseJson(row.profile_json, null),
     school: {
@@ -158,119 +233,191 @@ function mapEmail(row) {
   };
 }
 
+function toEmailRow(entry, userId) {
+  const now = new Date().toISOString();
+  return {
+    id: entry.id || nanoid(),
+    user_id: userId,
+    status: entry.status || "generated",
+    athlete_name: entry.athleteName || "",
+    school_id: entry.school?.id || "",
+    school_name: entry.school?.name || "",
+    school_division: entry.school?.division || "",
+    school_conference: entry.school?.conference || "",
+    coach_id: entry.coach?.id || "",
+    coach_name: entry.coach?.name || "",
+    coach_title: entry.coach?.title || "",
+    coach_email: entry.coach?.email || null,
+    coach_x_handle: entry.coach?.xHandle || "",
+    coach_x_url: entry.coach?.xUrl || "",
+    email_subject: entry.email_subject || "",
+    email_body: entry.email_body || "",
+    email_lookup_tip: entry.email_lookup_tip || "",
+    provider: entry.provider || "",
+    profile_json: entry.profileSnapshot || null,
+    generated_at: entry.generatedAt || now,
+    opened_at: entry.openedAt || null,
+    sent_at: entry.sentAt || null,
+    created_at: entry.createdAt || now,
+    updated_at: entry.updatedAt || now
+  };
+}
+
+async function supabaseRequest(table, { method = "GET", query = {}, body, prefer, extraHeaders = {} } = {}) {
+  if (!USE_SUPABASE) throw new Error("Supabase is not configured.");
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  }
+  const headers = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    ...extraHeaders
+  };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (prefer) headers.Prefer = prefer;
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    throw new Error(data?.message || data?.hint || `Supabase ${table} request failed: ${response.status}`);
+  }
+  return data;
+}
+
+async function supabaseSelectAll(table, query = {}) {
+  const rows = [];
+  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+    const page = await supabaseRequest(table, {
+      query: {
+        ...query,
+        limit: SUPABASE_PAGE_SIZE,
+        offset
+      }
+    });
+    rows.push(...(page || []));
+    if (!page || page.length < SUPABASE_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+async function supabaseGetUserRowByEmail(userEmail) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  if (!email) return null;
+  const rows = await supabaseRequest("users", {
+    query: { select: "*", gmail_email: `eq.${email}`, limit: 1 }
+  });
+  return rows?.[0] || null;
+}
+
+export function dataStoreStatus() {
+  return {
+    provider: USE_SUPABASE ? "supabase" : "local-json-memory",
+    supabaseConfigured: USE_SUPABASE
+  };
+}
+
 export async function getSchools() {
-  return readJson(paths.schools, []);
+  if (USE_SUPABASE) {
+    const rows = await supabaseSelectAll("schools", { select: "*", order: "name.asc" });
+    return rows.map(mapSchool);
+  }
+  return (await readJson(paths.schools, [])).map(mapSchool);
 }
 
 export async function getCoaches() {
-  return readJson(paths.coaches, []);
+  if (USE_SUPABASE) {
+    const rows = await supabaseSelectAll("coaches", { select: "*", order: "school_id.asc,name.asc" });
+    return rows.map(mapCoach);
+  }
+  return (await readJson(paths.coaches, [])).map(mapCoach);
 }
 
 export async function getUsers() {
-  return db.prepare("SELECT * FROM users ORDER BY created_at DESC").all().map(mapUser);
+  if (USE_SUPABASE) {
+    const rows = await supabaseSelectAll("users", { select: "*", order: "created_at.desc" });
+    return rows.map(mapUser);
+  }
+  return [...memoryUsers.values()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).map(mapUser);
 }
 
 export async function getUserByEmail(userEmail) {
   const email = String(userEmail || "").trim().toLowerCase();
   if (!email) return null;
-  return mapUser(db.prepare("SELECT * FROM users WHERE gmail_email = ?").get(email));
+  if (USE_SUPABASE) return mapUser(await supabaseGetUserRowByEmail(email));
+  return mapUser(memoryUsers.get(email));
 }
 
 export async function upsertUser(input = {}) {
   const email = String(input.email || "").trim().toLowerCase();
   if (!email || !email.includes("@")) throw new Error("A valid email is required.");
-  const now = new Date().toISOString();
-  const existing = db.prepare("SELECT * FROM users WHERE gmail_email = ?").get(email);
-  if (existing) {
-    const profile = existing.profile_json || stringifyJson(input.profileSnapshot);
-    db.prepare(`
-      UPDATE users
-      SET name = ?, provider = ?, google_sub = ?, picture_url = ?, email_verified = ?, profile_json = ?, updated_at = ?, last_seen_at = ?
-      WHERE id = ?
-    `).run(
-      input.name || existing.name || email.split("@")[0],
-      input.provider || existing.provider || "gmail-compose-mvp",
-      input.googleSub || existing.google_sub || "",
-      input.pictureUrl || existing.picture_url || "",
-      input.emailVerified === true ? 1 : Number(existing.email_verified || 0),
-      profile,
-      now,
-      now,
-      existing.id
-    );
-    return mapUser(db.prepare("SELECT * FROM users WHERE id = ?").get(existing.id));
+
+  if (USE_SUPABASE) {
+    const existing = await supabaseGetUserRowByEmail(email);
+    const row = userRowFromInput({ ...input, email }, existing);
+    const rows = await supabaseRequest("users", {
+      method: "POST",
+      query: { on_conflict: "gmail_email" },
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: row
+    });
+    return mapUser(rows?.[0]);
   }
-  const user = {
-    id: nanoid(),
-    gmail_email: email,
-    name: input.name || email.split("@")[0],
-    provider: input.provider || "gmail-compose-mvp",
-    google_sub: input.googleSub || "",
-    picture_url: input.pictureUrl || "",
-    email_verified: input.emailVerified === true ? 1 : 0,
-    profile_json: stringifyJson(input.profileSnapshot || null),
-    created_at: now,
-    updated_at: now,
-    last_seen_at: now
-  };
-  db.prepare(`
-    INSERT INTO users (
-      id, gmail_email, name, provider, google_sub, picture_url, email_verified, profile_json,
-      created_at, updated_at, last_seen_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    user.id,
-    user.gmail_email,
-    user.name,
-    user.provider,
-    user.google_sub,
-    user.picture_url,
-    user.email_verified,
-    user.profile_json,
-    user.created_at,
-    user.updated_at,
-    user.last_seen_at
-  );
-  return mapUser(db.prepare("SELECT * FROM users WHERE id = ?").get(user.id));
+
+  const existing = memoryUsers.get(email);
+  const row = userRowFromInput({ ...input, email }, existing);
+  memoryUsers.set(email, row);
+  return mapUser(row);
 }
 
 export async function updateUserProfile(userEmail, profileSnapshot = {}) {
   const email = String(userEmail || "").trim().toLowerCase();
   if (!email || !email.includes("@")) throw new Error("A valid user email is required.");
   const now = new Date().toISOString();
-  let user = db.prepare("SELECT * FROM users WHERE gmail_email = ?").get(email);
-  if (!user) {
-    return upsertUser({ email, profileSnapshot, provider: "gmail-compose-mvp" });
+
+  if (USE_SUPABASE) {
+    let user = await supabaseGetUserRowByEmail(email);
+    if (!user) return upsertUser({ email, profileSnapshot, provider: "gmail-compose-mvp" });
+    const rows = await supabaseRequest("users", {
+      method: "PATCH",
+      query: { gmail_email: `eq.${email}` },
+      prefer: "return=representation",
+      body: { profile_json: profileSnapshot || {}, updated_at: now, last_seen_at: now }
+    });
+    return mapUser(rows?.[0]);
   }
-  db.prepare("UPDATE users SET profile_json = ?, updated_at = ?, last_seen_at = ? WHERE id = ?")
-    .run(stringifyJson(profileSnapshot || {}), now, now, user.id);
-  return mapUser(db.prepare("SELECT * FROM users WHERE id = ?").get(user.id));
+
+  let user = memoryUsers.get(email);
+  if (!user) return upsertUser({ email, profileSnapshot, provider: "gmail-compose-mvp" });
+  user = { ...user, profile_json: profileSnapshot || {}, updated_at: now, last_seen_at: now };
+  memoryUsers.set(email, user);
+  return mapUser(user);
 }
 
 export async function getEmailHistory() {
-  return db.prepare(`
-    SELECT emails.*, users.gmail_email, users.name AS user_name
-    FROM emails
-    JOIN users ON users.id = emails.user_id
-    ORDER BY emails.created_at DESC
-  `).all().map(mapEmail);
+  if (USE_SUPABASE) {
+    const [users, emails] = await Promise.all([
+      supabaseSelectAll("users", { select: "*" }),
+      supabaseSelectAll("emails", { select: "*", order: "created_at.desc" })
+    ]);
+    const usersById = new Map(users.map(user => [user.id, user]));
+    return emails.map(email => mapEmail(email, usersById.get(email.user_id)));
+  }
+  const usersById = new Map([...memoryUsers.values()].map(user => [user.id, user]));
+  return [...memoryEmails]
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .map(email => mapEmail(email, usersById.get(email.user_id)));
 }
 
 export async function saveEmailHistoryEntries(entries = []) {
-  const now = new Date().toISOString();
   const inserted = [];
-  const insert = db.prepare(`
-    INSERT INTO emails (
-      id, user_id, status, athlete_name, school_id, school_name, school_division, school_conference,
-      coach_id, coach_name, coach_title, coach_email, coach_x_handle, coach_x_url,
-      email_subject, email_body, email_lookup_tip, provider, profile_json, generated_at,
-      opened_at, sent_at, created_at, updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  db.exec("BEGIN");
-  try {
+
+  if (USE_SUPABASE) {
+    const rowsByUser = new Map();
     for (const entry of entries) {
       const user = await upsertUser({
         email: entry.userEmail,
@@ -278,44 +425,33 @@ export async function saveEmailHistoryEntries(entries = []) {
         profileSnapshot: entry.profileSnapshot,
         provider: "gmail-compose-mvp"
       });
-      const id = nanoid();
-      insert.run(
-        id,
-        user.id,
-        entry.status || "generated",
-        entry.athleteName || "",
-        entry.school?.id || "",
-        entry.school?.name || "",
-        entry.school?.division || "",
-        entry.school?.conference || "",
-        entry.coach?.id || "",
-        entry.coach?.name || "",
-        entry.coach?.title || "",
-        entry.coach?.email || null,
-        entry.coach?.xHandle || "",
-        entry.coach?.xUrl || "",
-        entry.email_subject || "",
-        entry.email_body || "",
-        entry.email_lookup_tip || "",
-        entry.provider || "",
-        stringifyJson(entry.profileSnapshot || null),
-        entry.generatedAt || now,
-        entry.openedAt || null,
-        entry.sentAt || null,
-        entry.createdAt || now,
-        entry.updatedAt || now
-      );
-      inserted.push(mapEmail(db.prepare(`
-        SELECT emails.*, users.gmail_email, users.name AS user_name
-        FROM emails
-        JOIN users ON users.id = emails.user_id
-        WHERE emails.id = ?
-      `).get(id)));
+      const userRow = {
+        id: user.id,
+        gmail_email: user.email,
+        name: user.name
+      };
+      rowsByUser.set(user.id, userRow);
+      const rows = await supabaseRequest("emails", {
+        method: "POST",
+        prefer: "return=representation",
+        body: toEmailRow(entry, user.id)
+      });
+      inserted.push(mapEmail(rows?.[0], userRow));
     }
-    db.exec("COMMIT");
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
+    return inserted;
+  }
+
+  for (const entry of entries) {
+    const user = await upsertUser({
+      email: entry.userEmail,
+      name: entry.userName,
+      profileSnapshot: entry.profileSnapshot,
+      provider: "gmail-compose-mvp"
+    });
+    const userRow = memoryUsers.get(user.email);
+    const row = toEmailRow(entry, user.id);
+    memoryEmails.push(row);
+    inserted.push(mapEmail(row, userRow));
   }
   return inserted;
 }
@@ -323,52 +459,87 @@ export async function saveEmailHistoryEntries(entries = []) {
 export async function listEmailHistory(userEmail) {
   const email = String(userEmail || "").trim().toLowerCase();
   if (!email) return [];
-  return db.prepare(`
-    SELECT emails.*, users.gmail_email, users.name AS user_name
-    FROM emails
-    JOIN users ON users.id = emails.user_id
-    WHERE users.gmail_email = ?
-    ORDER BY emails.created_at DESC
-  `).all(email).map(mapEmail);
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return [];
+    const rows = await supabaseSelectAll("emails", {
+      select: "*",
+      user_id: `eq.${user.id}`,
+      order: "created_at.desc"
+    });
+    return rows.map(row => mapEmail(row, user));
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return [];
+  return memoryEmails
+    .filter(row => row.user_id === user.id)
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .map(row => mapEmail(row, user));
 }
 
 export async function updateEmailHistoryItem(id, userEmail, updates = {}) {
   const email = String(userEmail || "").trim().toLowerCase();
-  const existing = db.prepare(`
-    SELECT emails.*
-    FROM emails
-    JOIN users ON users.id = emails.user_id
-    WHERE emails.id = ? AND users.gmail_email = ?
-  `).get(id, email);
-  if (!existing) return null;
-  const next = {
-    status: updates.status || existing.status,
-    email_subject: typeof updates.email_subject === "string" ? updates.email_subject : existing.email_subject,
-    email_body: typeof updates.email_body === "string" ? updates.email_body : existing.email_body,
-    opened_at: updates.openedAt || existing.opened_at,
-    sent_at: updates.sentAt || existing.sent_at,
-    updated_at: new Date().toISOString()
+  const now = new Date().toISOString();
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return null;
+    const body = {
+      updated_at: now
+    };
+    if (updates.status) body.status = updates.status;
+    if (typeof updates.email_subject === "string") body.email_subject = updates.email_subject;
+    if (typeof updates.email_body === "string") body.email_body = updates.email_body;
+    if (updates.openedAt) body.opened_at = updates.openedAt;
+    if (updates.sentAt) body.sent_at = updates.sentAt;
+
+    const rows = await supabaseRequest("emails", {
+      method: "PATCH",
+      query: { id: `eq.${id}`, user_id: `eq.${user.id}` },
+      prefer: "return=representation",
+      body
+    });
+    return rows?.[0] ? mapEmail(rows[0], user) : null;
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return null;
+  const index = memoryEmails.findIndex(row => row.id === id && row.user_id === user.id);
+  if (index === -1) return null;
+  memoryEmails[index] = {
+    ...memoryEmails[index],
+    status: updates.status || memoryEmails[index].status,
+    email_subject: typeof updates.email_subject === "string" ? updates.email_subject : memoryEmails[index].email_subject,
+    email_body: typeof updates.email_body === "string" ? updates.email_body : memoryEmails[index].email_body,
+    opened_at: updates.openedAt || memoryEmails[index].opened_at,
+    sent_at: updates.sentAt || memoryEmails[index].sent_at,
+    updated_at: now
   };
-  db.prepare(`
-    UPDATE emails
-    SET status = ?, email_subject = ?, email_body = ?, opened_at = ?, sent_at = ?, updated_at = ?
-    WHERE id = ?
-  `).run(next.status, next.email_subject, next.email_body, next.opened_at, next.sent_at, next.updated_at, id);
-  return mapEmail(db.prepare(`
-    SELECT emails.*, users.gmail_email, users.name AS user_name
-    FROM emails
-    JOIN users ON users.id = emails.user_id
-    WHERE emails.id = ?
-  `).get(id));
+  return mapEmail(memoryEmails[index], user);
 }
 
 export async function deleteEmailHistoryItem(id, userEmail) {
   const email = String(userEmail || "").trim().toLowerCase();
-  const result = db.prepare(`
-    DELETE FROM emails
-    WHERE id = ? AND user_id = (SELECT id FROM users WHERE gmail_email = ?)
-  `).run(id, email);
-  return result.changes > 0;
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return false;
+    const rows = await supabaseRequest("emails", {
+      method: "DELETE",
+      query: { id: `eq.${id}`, user_id: `eq.${user.id}` },
+      prefer: "return=representation"
+    });
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return false;
+  const index = memoryEmails.findIndex(row => row.id === id && row.user_id === user.id);
+  if (index === -1) return false;
+  memoryEmails.splice(index, 1);
+  return true;
 }
 
 export async function findSchoolByName(name) {
@@ -377,22 +548,26 @@ export async function findSchoolByName(name) {
   return schools.find(s => normalizeName(s.name) === needle || normalizeName(s.shortName) === needle) || null;
 }
 
-export async function searchSchools(q = "") {
+export async function searchSchools(q = "", options = {}) {
   const schools = await getSchools();
   const needle = normalizeName(q);
-  if (!needle) return schools;
-  return schools.filter(s => {
+  const limit = Number(options.limit || 250);
+  const includePrivate = options.includePrivate === true;
+  const filtered = schools.filter(s => {
+    if (!needle) return true;
     const blob = [s.name, s.shortName, s.division, s.conference, s.state, s.city].join(" ");
     return normalizeName(blob).includes(needle);
   });
+  return filtered
+    .slice(0, Math.max(1, Math.min(limit, 1000)))
+    .map(school => includePrivate ? school : publicSchool(school));
 }
 
 export async function addSchool(input) {
-  const schools = await getSchools();
-  const existing = schools.find(s => normalizeName(s.name) === normalizeName(input.name));
+  const existing = await findSchoolByName(input.name);
   if (existing) return existing;
   const record = {
-    id: nanoid(),
+    id: input.id || nanoid(),
     name: input.name,
     shortName: input.shortName || input.name,
     division: input.division || "Unknown",
@@ -406,6 +581,17 @@ export async function addSchool(input) {
     sourceUrl: input.sourceUrl || input.staffPageUrl || "",
     dataConfidence: input.dataConfidence || "low"
   };
+
+  if (USE_SUPABASE) {
+    const rows = await supabaseRequest("schools", {
+      method: "POST",
+      prefer: "return=representation",
+      body: toSchoolRow(record)
+    });
+    return mapSchool(rows?.[0]);
+  }
+
+  const schools = await getSchools();
   schools.push(record);
   await writeJson(paths.schools, schools);
   return record;
@@ -416,45 +602,50 @@ export async function upsertCoaches(records) {
   const byKey = new Map(coaches.map(c => [`${c.schoolId}|${normalizeName(c.name)}|${normalizeName(c.title)}`, c]));
   let inserted = 0;
   let updated = 0;
+
   for (const raw of records) {
-    const key = `${raw.schoolId}|${normalizeName(raw.name)}|${normalizeName(raw.title)}`;
+    const cleaned = cleanCoach(raw);
+    const key = `${cleaned.schoolId}|${normalizeName(cleaned.name)}|${normalizeName(cleaned.title)}`;
     const existing = byKey.get(key);
+
     if (existing) {
-      Object.assign(existing, cleanCoach(raw), { updatedAt: new Date().toISOString() });
+      const next = { ...existing, ...cleaned, updatedAt: new Date().toISOString() };
+      if (USE_SUPABASE) {
+        await supabaseRequest("coaches", {
+          method: "PATCH",
+          query: { id: `eq.${existing.id}` },
+          prefer: "return=representation",
+          body: toCoachRow(next)
+        });
+      } else {
+        Object.assign(existing, next);
+      }
       updated++;
     } else {
       const record = {
-        id: nanoid(),
+        id: raw.id || nanoid(),
         active: true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        ...cleanCoach(raw)
+        ...cleaned
       };
-      coaches.push(record);
+      if (USE_SUPABASE) {
+        await supabaseRequest("coaches", {
+          method: "POST",
+          prefer: "return=representation",
+          body: { ...toCoachRow(record), created_at: record.createdAt }
+        });
+      } else {
+        coaches.push(record);
+      }
       byKey.set(key, record);
       inserted++;
     }
   }
-  await writeJson(paths.coaches, coaches);
-  return { inserted, updated, total: coaches.length };
-}
 
-function cleanCoach(raw) {
-  return {
-    schoolId: raw.schoolId,
-    name: raw.name || "",
-    title: raw.title || "",
-    email: raw.email || "",
-    phone: raw.phone || "",
-    xHandle: raw.xHandle || raw.twitter || "",
-    positionGroups: Array.isArray(raw.positionGroups) ? raw.positionGroups : parseList(raw.positionGroups),
-    recruitingStates: Array.isArray(raw.recruitingStates) ? raw.recruitingStates : parseList(raw.recruitingStates),
-    sourceUrl: raw.sourceUrl || "",
-    lastVerified: raw.lastVerified || null,
-    confidence: raw.confidence || "medium",
-    notes: raw.notes || "",
-    active: raw.active !== false
-  };
+  if (!USE_SUPABASE) await writeJson(paths.coaches, coaches);
+  const total = USE_SUPABASE ? (await getCoaches()).length : coaches.length;
+  return { inserted, updated, total };
 }
 
 export function parseList(value) {
@@ -467,6 +658,15 @@ export function parseList(value) {
 }
 
 export async function coachesForSchool(schoolId) {
+  if (USE_SUPABASE) {
+    const rows = await supabaseSelectAll("coaches", {
+      select: "*",
+      school_id: `eq.${schoolId}`,
+      active: "eq.true",
+      order: "name.asc"
+    });
+    return rows.map(mapCoach);
+  }
   const coaches = await getCoaches();
   return coaches.filter(c => c.schoolId === schoolId && c.active !== false);
 }

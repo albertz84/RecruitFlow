@@ -7,13 +7,12 @@ This version keeps the data model simple.
 Stored data lives in:
 
 ```txt
-server/data/schools.json
-server/data/coaches.json
-server/data/recruitflow.sqlite
+Supabase tables: schools, coaches, users, emails
+Seed fallback: server/data/schools.json and server/data/coaches.json
 ```
 
-`schools.json` and `coaches.json` are the local school database.
-`recruitflow.sqlite` stores connected Gmail users, saved athlete profile snapshots, and user-facing email history rows.
+In production, Supabase stores connected Google users, saved athlete profile snapshots, user-facing email history rows, schools, and coaches.
+The JSON files are retained as import seeds and local development fallback data.
 
 ## What is not used anymore
 
@@ -21,7 +20,7 @@ server/data/recruitflow.sqlite
 - Cache-backed school lookups
 - Separate draft-history JSON storage as a product feature
 
-The app now only generates emails from the local school JSON data plus the athlete profile.
+The app now only generates emails from the saved school/coach database plus the athlete profile.
 
 ## Why
 

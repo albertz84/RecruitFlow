@@ -12,6 +12,7 @@ import {
   deleteEmailHistoryItem,
   upsertUser,
   updateUserProfile,
+  dataStoreStatus,
   getCoaches,
   getSchools
 } from "./database.js";
@@ -50,18 +51,20 @@ app.get("/api/health", (req, res) => {
     geminiApiKeyConfigured: Boolean(config.geminiApiKey),
     anthropicApiKeyConfigured: Boolean(config.anthropicApiKey),
     geminiDraftModel: config.geminiDraftModel,
-    draftProvider
+    draftProvider,
+    dataStore: dataStoreStatus()
   });
 });
 
-app.get("/api/schools", async (req, res, next) => {
+app.get("/api/schools", requireAuth, async (req, res, next) => {
   try {
     const q = req.query.q || "";
-    res.json({ schools: await searchSchools(q) });
+    const limit = Number(req.query.limit || 1000);
+    res.json({ schools: await searchSchools(q, { limit }) });
   } catch (err) { next(err); }
 });
 
-app.get("/api/coaches", async (req, res, next) => {
+app.get("/api/coaches", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const schoolId = req.query.schoolId;
     const coaches = schoolId ? await coachesForSchool(schoolId) : await getCoaches();
@@ -138,7 +141,7 @@ app.delete("/api/email-history/:id", requireAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-app.post("/api/schools", async (req, res, next) => {
+app.post("/api/schools", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const school = await addSchool(req.body || {});
     res.status(201).json({ school });

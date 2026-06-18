@@ -8,7 +8,8 @@
     "dev": "node ./scripts/dev.mjs",
     "server": "npm run dev --prefix server",
     "client": "npm run dev --prefix client",
-    "start": "npm run start --prefix server"
+    "start": "npm run start --prefix server",
+    "import:supabase": "node ./scripts/import-supabase-data.mjs"
   },
   "engines": {
     "node": ">=24"

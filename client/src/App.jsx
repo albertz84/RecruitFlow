@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Clock, Copy, Database, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Upload, Users, X } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8787";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
 const POSITIONS = ["QB","RB","FB","WR","TE","OT","OG","C","DE","DT","NT","ILB","OLB","CB","FS","SS","K","P","LS","ATH"];
 const STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
@@ -228,8 +228,16 @@ export default function App() {
     loadSession();
     api("/api/health").then(setHealth).catch(() => setHealth(null));
     refreshStats();
-    refreshSchools();
   }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    if (connectedUser?.email) {
+      refreshSchools();
+    } else {
+      setDatabaseSchools([]);
+    }
+  }, [authReady, connectedUser?.email]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
