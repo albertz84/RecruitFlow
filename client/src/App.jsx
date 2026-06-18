@@ -65,6 +65,14 @@ function storedTheme() {
   }
 }
 
+function storedLegalAccepted() {
+  try {
+    return localStorage.getItem("recruitflow:legalAccepted") === "true";
+  } catch {
+    return false;
+  }
+}
+
 function storedProfile(email = "") {
   const keys = email ? [`recruitflow:profile:${email}`, "recruitflow:profile"] : ["recruitflow:profile"];
   for (const key of keys) {
@@ -220,6 +228,7 @@ export default function App() {
   const [connectedUser, setConnectedUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [googleAuthConfigured, setGoogleAuthConfigured] = useState(true);
+  const [legalAccepted, setLegalAccepted] = useState(() => storedLegalAccepted());
   const [gmailMsg, setGmailMsg] = useState("");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -243,6 +252,10 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("recruitflow:theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("recruitflow:legalAccepted", legalAccepted ? "true" : "false");
+  }, [legalAccepted]);
 
   useEffect(() => {
     if (connectedUser?.email) refreshHistory();
@@ -325,6 +338,10 @@ export default function App() {
   function connectGmail() {
     if (!googleAuthConfigured) {
       setGmailMsg("Google login is not configured on the server yet.");
+      return;
+    }
+    if (!legalAccepted) {
+      setGmailMsg("Confirm that you are at least 13 and agree to the Privacy Policy and Terms before signing in.");
       return;
     }
     localStorage.setItem("recruitflow:profile", JSON.stringify(profile));
@@ -542,7 +559,10 @@ export default function App() {
           <button className="secondary small" onClick={disconnectGmail}><LogOut size={14}/>Disconnect</button>
         </> : <>
           <button className="primary smallBtn" onClick={connectGmail} disabled={!authReady || !googleAuthConfigured}><Mail size={15}/>{!authReady ? "Checking login..." : googleAuthConfigured ? "Sign in with Google" : "Google login not configured"}</button>
-          <span className="connectHint">Secure login. Gmail still opens for final sending.</span>
+          <label className="legalConfirm">
+            <input type="checkbox" checked={legalAccepted} onChange={e => setLegalAccepted(e.target.checked)} />
+            <span>I am at least 13 and agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</span>
+          </label>
         </>}
       </div>
     </div>
@@ -676,6 +696,11 @@ export default function App() {
 
     <Results results={results} setResults={setResults} profile={profile} connectedUser={connectedUser} onOpenGmail={openGmailDraft}/>
     </>}
+    <footer className="appFooter">
+      <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+      <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+      <span>Users must be at least 13.</span>
+    </footer>
   </main>;
 }
 
