@@ -41,6 +41,7 @@ const emptyProfile = {
 function api(path, options = {}) {
   return fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {})
@@ -198,7 +199,7 @@ function GenerationWait({ schoolCount, maxContacts, provider, elapsedSeconds }) 
 
 export default function App() {
   const [theme, setTheme] = useState(() => storedTheme());
-  const [profile, setProfile] = useState(() => storedProfile(storedUser()?.email));
+  const [profile, setProfile] = useState(() => storedProfile());
   const [schools, setSchools] = useState([]);
   const [databaseSchools, setDatabaseSchools] = useState([]);
   const [schoolQuery, setSchoolQuery] = useState("");
@@ -216,13 +217,15 @@ export default function App() {
   const [csv, setCsv] = useState("");
   const [adminMsg, setAdminMsg] = useState("");
   const [view, setView] = useState("compose");
-  const [connectedUser, setConnectedUser] = useState(() => storedUser());
-  const [gmailEmail, setGmailEmail] = useState(() => storedUser()?.email || "");
+  const [connectedUser, setConnectedUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [googleAuthConfigured, setGoogleAuthConfigured] = useState(true);
   const [gmailMsg, setGmailMsg] = useState("");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
+    loadSession();
     api("/api/health").then(setHealth).catch(() => setHealth(null));
     refreshStats();
     refreshSchools();
@@ -234,7 +237,7 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (connectedUser?.email) refreshHistory(connectedUser.email);
+    if (connectedUser?.email) refreshHistory();
   }, [connectedUser?.email]);
 
   useEffect(() => {
@@ -245,15 +248,15 @@ export default function App() {
   }, [profile, connectedUser?.email]);
 
   useEffect(() => {
-    if (!connectedUser?.email) return;
+    if (!authReady || !connectedUser?.email) return;
     const timeout = setTimeout(() => {
       api("/api/user-profile", {
         method: "PATCH",
-        body: JSON.stringify({ userEmail: connectedUser.email, profileSnapshot: profile })
+        body: JSON.stringify({ profileSnapshot: profile })
       }).catch(err => setGmailMsg(err.message));
     }, 700);
     return () => clearTimeout(timeout);
-  }, [profile, connectedUser?.email]);
+  }, [profile, connectedUser?.email, authReady]);
 
   useEffect(() => {
     setVisibleSchoolCount(SCHOOL_PAGE_SIZE);
@@ -281,42 +284,60 @@ export default function App() {
     }
   }
 
-  async function connectGmail() {
+  async function loadSession() {
     setGmailMsg("");
-    const email = gmailEmail.trim().toLowerCase();
-    if (!email || !email.includes("@")) {
-      setGmailMsg("Enter the Gmail address you want to use for history.");
-      return;
-    }
     try {
-      const data = await api("/api/connect-gmail", {
-        method: "POST",
-        body: JSON.stringify({ email, profileSnapshot: profile })
-      });
-      setConnectedUser(data.user);
-      localStorage.setItem("recruitflow:gmailUser", JSON.stringify(data.user));
-      if (data.user.profileSnapshot) {
-        setProfile(prev => ({ ...prev, ...data.user.profileSnapshot }));
-        localStorage.setItem(`recruitflow:profile:${data.user.email}`, JSON.stringify({ ...profile, ...data.user.profileSnapshot }));
+      const data = await api("/api/auth/me");
+      setGoogleAuthConfigured(data.configured !== false);
+      if (data.user) {
+        setConnectedUser(data.user);
+        localStorage.setItem("recruitflow:gmailUser", JSON.stringify(data.user));
+        const savedProfile = data.user.profileSnapshot || storedProfile(data.user.email);
+        if (savedProfile) {
+          setProfile(prev => ({ ...prev, ...savedProfile }));
+          localStorage.setItem(`recruitflow:profile:${data.user.email}`, JSON.stringify({ ...profile, ...savedProfile }));
+        }
+      } else {
+        setConnectedUser(null);
+        localStorage.removeItem("recruitflow:gmailUser");
       }
-      setGmailMsg(`Connected as ${data.user.email}.`);
     } catch (err) {
       setGmailMsg(err.message);
+    } finally {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("auth") === "success") setGmailMsg("Signed in with Google.");
+      if (params.get("auth") === "error") setGmailMsg(params.get("message") || "Google sign-in failed.");
+      if (params.has("auth")) {
+        window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash || ""}`);
+      }
+      setAuthReady(true);
     }
   }
 
-  function disconnectGmail() {
+  function connectGmail() {
+    if (!googleAuthConfigured) {
+      setGmailMsg("Google login is not configured on the server yet.");
+      return;
+    }
+    localStorage.setItem("recruitflow:profile", JSON.stringify(profile));
+    window.location.href = `${API_BASE}/api/auth/google`;
+  }
+
+  async function disconnectGmail() {
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+    } catch {}
     localStorage.removeItem("recruitflow:gmailUser");
     setConnectedUser(null);
     setHistory([]);
     setGmailMsg("");
   }
 
-  async function refreshHistory(email = connectedUser?.email) {
-    if (!email) return;
+  async function refreshHistory() {
+    if (!connectedUser?.email) return;
     setHistoryLoading(true);
     try {
-      const data = await api(`/api/email-history?userEmail=${encodeURIComponent(email)}`);
+      const data = await api("/api/email-history");
       setHistory(data.history || []);
     } catch (err) {
       setGmailMsg(err.message);
@@ -329,7 +350,7 @@ export default function App() {
     if (!connectedUser?.email) return null;
     const data = await api(`/api/email-history/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ userEmail: connectedUser.email, ...updates })
+      body: JSON.stringify(updates)
     });
     setHistory(prev => prev.map(item => item.id === id ? data.item : item));
     return data.item;
@@ -337,13 +358,13 @@ export default function App() {
 
   async function deleteHistoryItem(id) {
     if (!connectedUser?.email) return;
-    await api(`/api/email-history/${id}?userEmail=${encodeURIComponent(connectedUser.email)}`, { method: "DELETE" });
+    await api(`/api/email-history/${id}`, { method: "DELETE" });
     setHistory(prev => prev.filter(item => item.id !== id));
   }
 
   function openGmailDraft({ draft, school }) {
     if (!connectedUser?.email) {
-      setGmailMsg("Connect Gmail first so this draft is saved to your history.");
+      setGmailMsg("Sign in with Google first so this draft is saved to your history.");
       return;
     }
     const url = gmailComposeUrl({
@@ -440,6 +461,10 @@ export default function App() {
 
   async function generate() {
     setError("");
+    if (!connectedUser?.email) {
+      setError("Sign in with Google before generating emails.");
+      return;
+    }
     if (missing.length) {
       setError(`Missing: ${missing.join(", ")}`);
       return;
@@ -454,12 +479,11 @@ export default function App() {
         body: JSON.stringify({
           profile,
           schools,
-          options: { maxContacts },
-          user: connectedUser
+          options: { maxContacts }
         })
       });
       setResults(data.results || []);
-      if (connectedUser?.email) refreshHistory(connectedUser.email);
+      if (connectedUser?.email) refreshHistory();
       refreshStats();
     } catch (err) {
       setError(err.message);
@@ -509,9 +533,8 @@ export default function App() {
           <span className="connectedUser"><Check size={15}/>{connectedUser.email}</span>
           <button className="secondary small" onClick={disconnectGmail}><LogOut size={14}/>Disconnect</button>
         </> : <>
-          <input className="input gmailInput" value={gmailEmail} onChange={e => setGmailEmail(e.target.value)} placeholder="your@gmail.com" onKeyDown={e => e.key === "Enter" && connectGmail()}/>
-          <button className="primary smallBtn" onClick={connectGmail}><Mail size={15}/>Connect Gmail</button>
-          <span className="connectHint">MVP: opens Gmail compose, no inbox access.</span>
+          <button className="primary smallBtn" onClick={connectGmail} disabled={!authReady || !googleAuthConfigured}><Mail size={15}/>{!authReady ? "Checking login..." : googleAuthConfigured ? "Sign in with Google" : "Google login not configured"}</button>
+          <span className="connectHint">Secure login. Gmail still opens for final sending.</span>
         </>}
       </div>
     </div>
@@ -620,7 +643,7 @@ export default function App() {
       </div>
 
       <aside className="rightCol">
-        <Section title="Database admin" icon={<Database size={18}/>}> 
+        {connectedUser?.isAdmin && <Section title="Database admin" icon={<Database size={18}/>}> 
           <div className="dbStats">
             <div><strong>{stats?.schools ?? "—"}</strong><span>schools</span></div>
             <div><strong>{stats?.coaches ?? "—"}</strong><span>coaches</span></div>
@@ -630,7 +653,7 @@ export default function App() {
           <textarea className="input textarea mono" rows={8} value={csv} onChange={e => setCsv(e.target.value)} placeholder="Paste coach_import_template.csv rows here..." />
           <button className="secondary" onClick={importCsv}><Upload size={16}/>Import CSV</button>
           {adminMsg && <p className="muted">{adminMsg}</p>}
-        </Section>
+        </Section>}
 
         <Section title="Cost model" icon={<Database size={18}/>}> 
           <ul className="bullets">
@@ -661,7 +684,7 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSa
   if (!user) {
     return <section className="section historyPage">
       <h2><History size={18}/>Email history</h2>
-      <p className="muted">Connect Gmail to save generated emails to a local history dashboard.</p>
+      <p className="muted">Sign in with Google to save generated emails to your history dashboard.</p>
     </section>;
   }
 
@@ -813,7 +836,7 @@ function Results({ results, setResults, profile, connectedUser, onOpenGmail }) {
         const full = `To: ${d.coach_email || "[find email]"}\nSubject: ${d.email_subject}\n\n${d.email_body}`;
         return <div className="draft" key={`${d.coach_id || j}`}>
           <div className="draftTop"><div><strong>{d.coach_name}</strong><span>{d.coach_title}</span><span className="contactMeta">{d.coach_email ? <code>{d.coach_email}</code> : <em>{d.email_lookup_tip || "Find email manually"}</em>}<CoachXLink handle={d.coach_x_handle} url={d.coach_x_url}/></span></div><div className="draftActions"><button className="primary smallBtn" onClick={() => onOpenGmail?.({ draft: d, school: r.school })}><ExternalLink size={14}/>Open in Gmail</button><CopyButton text={full} label="Copy full"/></div></div>
-          {!connectedUser && <p className="muted compactNotice">Connect Gmail first if you want this email saved to your history.</p>}
+          {!connectedUser && <p className="muted compactNotice">Sign in with Google first if you want this email saved to your history.</p>}
           <div className="rewriteRow">
             {rewriteActions.map(([action, label]) => {
               const key = `${i}-${j}-${action}`;

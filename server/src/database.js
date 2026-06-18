@@ -66,6 +66,18 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_users_email ON users (gmail_email);
 `);
 
+for (const statement of [
+  "ALTER TABLE users ADD COLUMN google_sub TEXT",
+  "ALTER TABLE users ADD COLUMN picture_url TEXT",
+  "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0"
+]) {
+  try { db.exec(statement); } catch (err) {
+    if (!String(err.message || "").includes("duplicate column name")) throw err;
+  }
+}
+
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users (google_sub) WHERE google_sub IS NOT NULL AND google_sub != ''");
+
 async function readJson(filePath, fallback) {
   try {
     const raw = await fs.readFile(filePath, "utf8");
@@ -101,6 +113,9 @@ function mapUser(row) {
     email: row.gmail_email,
     name: row.name,
     provider: row.provider,
+    googleSub: row.google_sub || "",
+    pictureUrl: row.picture_url || "",
+    emailVerified: Boolean(row.email_verified),
     profileSnapshot: parseJson(row.profile_json, null),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -155,6 +170,12 @@ export async function getUsers() {
   return db.prepare("SELECT * FROM users ORDER BY created_at DESC").all().map(mapUser);
 }
 
+export async function getUserByEmail(userEmail) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  if (!email) return null;
+  return mapUser(db.prepare("SELECT * FROM users WHERE gmail_email = ?").get(email));
+}
+
 export async function upsertUser(input = {}) {
   const email = String(input.email || "").trim().toLowerCase();
   if (!email || !email.includes("@")) throw new Error("A valid email is required.");
@@ -164,11 +185,14 @@ export async function upsertUser(input = {}) {
     const profile = existing.profile_json || stringifyJson(input.profileSnapshot);
     db.prepare(`
       UPDATE users
-      SET name = ?, provider = ?, profile_json = ?, updated_at = ?, last_seen_at = ?
+      SET name = ?, provider = ?, google_sub = ?, picture_url = ?, email_verified = ?, profile_json = ?, updated_at = ?, last_seen_at = ?
       WHERE id = ?
     `).run(
       input.name || existing.name || email.split("@")[0],
       input.provider || existing.provider || "gmail-compose-mvp",
+      input.googleSub || existing.google_sub || "",
+      input.pictureUrl || existing.picture_url || "",
+      input.emailVerified === true ? 1 : Number(existing.email_verified || 0),
       profile,
       now,
       now,
@@ -181,15 +205,33 @@ export async function upsertUser(input = {}) {
     gmail_email: email,
     name: input.name || email.split("@")[0],
     provider: input.provider || "gmail-compose-mvp",
+    google_sub: input.googleSub || "",
+    picture_url: input.pictureUrl || "",
+    email_verified: input.emailVerified === true ? 1 : 0,
     profile_json: stringifyJson(input.profileSnapshot || null),
     created_at: now,
     updated_at: now,
     last_seen_at: now
   };
   db.prepare(`
-    INSERT INTO users (id, gmail_email, name, provider, profile_json, created_at, updated_at, last_seen_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(user.id, user.gmail_email, user.name, user.provider, user.profile_json, user.created_at, user.updated_at, user.last_seen_at);
+    INSERT INTO users (
+      id, gmail_email, name, provider, google_sub, picture_url, email_verified, profile_json,
+      created_at, updated_at, last_seen_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    user.id,
+    user.gmail_email,
+    user.name,
+    user.provider,
+    user.google_sub,
+    user.picture_url,
+    user.email_verified,
+    user.profile_json,
+    user.created_at,
+    user.updated_at,
+    user.last_seen_at
+  );
   return mapUser(db.prepare("SELECT * FROM users WHERE id = ?").get(user.id));
 }
 

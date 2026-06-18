@@ -4,6 +4,26 @@
 
 Returns server status and which draft provider is active.
 
+## GET /api/auth/google
+
+Starts Google OAuth login. Redirects the browser to Google.
+
+## GET /api/auth/google/callback
+
+Google OAuth callback. Verifies the returned ID token, creates or updates the user, sets an HTTP-only signed session cookie, then redirects back to `CLIENT_ORIGIN`.
+
+## GET /api/auth/me
+
+Returns the currently signed-in user from the session cookie.
+
+```json
+{ "configured": true, "user": { "email": "athlete@gmail.com", "name": "Athlete Name" } }
+```
+
+## POST /api/auth/logout
+
+Clears the session cookie.
+
 ## GET /api/stats
 
 Returns database coverage counts.
@@ -18,6 +38,8 @@ Return coaches for one school.
 
 ## POST /api/admin/import-coaches
 
+Requires a signed-in Google user whose email is listed in `ADMIN_EMAILS`.
+
 Body:
 
 ```json
@@ -28,19 +50,22 @@ Imports school and coach rows.
 
 ## POST /api/generate
 
+Requires Google login. The server uses the authenticated session user for saved history; it does not trust a browser-supplied email address.
+
 Body:
 
 ```json
 {
   "profile": { "firstName": "Albert", "position": "WR" },
-  "schools": [{ "name": "Princeton University", "division": "D1 FCS" }],
-  "user": { "email": "athlete@gmail.com" }
+  "schools": [{ "name": "Princeton University", "division": "D1 FCS" }]
 }
 ```
 
 Returns one contact plan and fresh draft set per school.
 
 ## POST /api/rewrite-draft
+
+Requires Google login.
 
 Body:
 

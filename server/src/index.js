@@ -18,11 +18,13 @@ import {
 import { recommendContacts, contactPlanSummary } from "./contactRules.js";
 import { generateDraftsForSchool, rewriteDraft } from "./anthropicClient.js";
 import { importCoachCsv } from "./csvImport.js";
+import { registerAuthRoutes, requireAdmin, requireAuth } from "./auth.js";
 
 const app = express();
-app.use(cors({ origin: config.clientOrigin, credentials: false }));
+app.use(cors({ origin: config.clientOrigin, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "2mb" }));
+registerAuthRoutes(app);
 
 app.get("/api/health", (req, res) => {
   const draftProvider = resolvedDraftProvider();
@@ -70,32 +72,36 @@ app.get("/api/stats", async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-app.post("/api/connect-gmail", async (req, res, next) => {
+app.post("/api/connect-gmail", requireAuth, async (req, res, next) => {
   try {
-    const { email, name, profileSnapshot } = req.body || {};
-    const user = await upsertUser({ email, name, profileSnapshot, provider: "gmail-compose-mvp" });
+    const { profileSnapshot } = req.body || {};
+    const user = await upsertUser({
+      email: req.authUser.email,
+      name: req.authUser.name,
+      profileSnapshot,
+      provider: "google-oauth"
+    });
     res.json({ user });
   } catch (err) { next(err); }
 });
 
-app.patch("/api/user-profile", async (req, res, next) => {
+app.patch("/api/user-profile", requireAuth, async (req, res, next) => {
   try {
-    const { userEmail, profileSnapshot } = req.body || {};
-    const user = await updateUserProfile(userEmail, profileSnapshot || {});
+    const { profileSnapshot } = req.body || {};
+    const user = await updateUserProfile(req.authUser.email, profileSnapshot || {});
     res.json({ user });
   } catch (err) { next(err); }
 });
 
-app.get("/api/email-history", async (req, res, next) => {
+app.get("/api/email-history", requireAuth, async (req, res, next) => {
   try {
-    const userEmail = req.query.userEmail;
-    res.json({ history: await listEmailHistory(userEmail) });
+    res.json({ history: await listEmailHistory(req.authUser.email) });
   } catch (err) { next(err); }
 });
 
-app.patch("/api/email-history/:id", async (req, res, next) => {
+app.patch("/api/email-history/:id", requireAuth, async (req, res, next) => {
   try {
-    const { userEmail, status, email_subject, email_body } = req.body || {};
+    const { status, email_subject, email_body } = req.body || {};
     const updates = {};
     if (status) {
       if (!["generated", "opened_gmail", "sent"].includes(status)) {
@@ -107,16 +113,15 @@ app.patch("/api/email-history/:id", async (req, res, next) => {
     }
     if (typeof email_subject === "string") updates.email_subject = email_subject;
     if (typeof email_body === "string") updates.email_body = email_body;
-    const item = await updateEmailHistoryItem(req.params.id, userEmail, updates);
+    const item = await updateEmailHistoryItem(req.params.id, req.authUser.email, updates);
     if (!item) return res.status(404).json({ error: "Email history item not found." });
     res.json({ item });
   } catch (err) { next(err); }
 });
 
-app.delete("/api/email-history/:id", async (req, res, next) => {
+app.delete("/api/email-history/:id", requireAuth, async (req, res, next) => {
   try {
-    const userEmail = req.query.userEmail || req.body?.userEmail;
-    const deleted = await deleteEmailHistoryItem(req.params.id, userEmail);
+    const deleted = await deleteEmailHistoryItem(req.params.id, req.authUser.email);
     if (!deleted) return res.status(404).json({ error: "Email history item not found." });
     res.json({ ok: true });
   } catch (err) { next(err); }
@@ -129,7 +134,7 @@ app.post("/api/schools", async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-app.post("/api/admin/import-coaches", async (req, res, next) => {
+app.post("/api/admin/import-coaches", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const csvText = typeof req.body === "string" ? req.body : req.body?.csvText;
     if (!csvText) return res.status(400).json({ error: "Send CSV text as text/csv or { csvText } JSON." });
@@ -138,9 +143,9 @@ app.post("/api/admin/import-coaches", async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-app.post("/api/generate", async (req, res, next) => {
+app.post("/api/generate", requireAuth, async (req, res, next) => {
   try {
-    const { profile, schools, options = {}, user } = req.body || {};
+    const { profile, schools, options = {} } = req.body || {};
     if (!profile) return res.status(400).json({ error: "profile is required" });
     if (!Array.isArray(schools) || schools.length === 0) return res.status(400).json({ error: "schools must be a non-empty array" });
 
@@ -148,7 +153,7 @@ app.post("/api/generate", async (req, res, next) => {
     const maxContacts = Number.isFinite(requestedMaxContacts)
       ? Math.min(Math.max(requestedMaxContacts, 1), 4)
       : Number(config.maxContactsPerSchool || 3);
-    const userEmail = String(user?.email || "").trim().toLowerCase();
+    const userEmail = req.authUser.email;
     const resolvedSchools = [];
 
     for (const requested of schools) {
@@ -200,7 +205,7 @@ app.post("/api/generate", async (req, res, next) => {
         const contactsById = new Map(contacts.map(contact => [contact.id, contact]));
         const historyEntries = await saveEmailHistoryEntries(draftPack.drafts.map(draft => ({
           userEmail,
-          userName: user?.name || "",
+          userName: req.authUser.name || "",
           athleteName,
           profileSnapshot: profile,
           school: {
@@ -237,7 +242,7 @@ app.post("/api/generate", async (req, res, next) => {
 });
 
 
-app.post("/api/rewrite-draft", async (req, res, next) => {
+app.post("/api/rewrite-draft", requireAuth, async (req, res, next) => {
   try {
     const { profile, school, contact, draft, action } = req.body || {};
     if (!profile) return res.status(400).json({ error: "profile is required" });

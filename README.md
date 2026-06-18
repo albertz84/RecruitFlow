@@ -20,6 +20,8 @@ The app can run without any model API key by using local email templates. Add Ge
 - Multiple coach contacts per school
 - Editable generated email drafts
 - Rewrite actions for tone, length, academics, football focus, DMs, and follow-ups
+- Google OAuth login with HTTP-only signed sessions
+- Per-user saved athlete profile and email history
 - Local template fallback when no API key is configured
 - Optional Gemini draft writing
 - Optional Anthropic draft writing
@@ -88,7 +90,36 @@ Useful defaults:
 PORT=8787
 HOST=127.0.0.1
 CLIENT_ORIGIN=http://localhost:5173
+GOOGLE_REDIRECT_URI=http://localhost:8787/api/auth/google/callback
+SESSION_SECRET=change-this-to-a-long-random-string
 DRAFT_PROVIDER=auto
+```
+
+Google login:
+
+```txt
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+ADMIN_EMAILS=you@gmail.com
+```
+
+Create a Google Cloud OAuth 2.0 Client ID for a web application. For local development, add this authorized redirect URI:
+
+```txt
+http://localhost:8787/api/auth/google/callback
+```
+
+For production, use your API domain instead:
+
+```txt
+https://api.yourdomain.com/api/auth/google/callback
+```
+
+Then set:
+
+```txt
+CLIENT_ORIGIN=https://yourdomain.com
+GOOGLE_REDIRECT_URI=https://api.yourdomain.com/api/auth/google/callback
 ```
 
 Draft writing options:
@@ -178,6 +209,18 @@ Start the backend in production mode:
 ```bash
 npm start
 ```
+
+## Deployment Notes
+
+For a public deployment, set `HOST=0.0.0.0`, use a real `SESSION_SECRET`, and keep the SQLite database on persistent storage via `DATABASE_PATH`.
+
+The frontend must call the deployed backend:
+
+```txt
+VITE_API_BASE=https://api.yourdomain.com
+```
+
+Google login uses an HTTP-only cookie, so the frontend fetches API requests with credentials enabled. Keep the frontend domain in `CLIENT_ORIGIN` so CORS allows those authenticated requests.
 
 ## GitHub Checklist
 
