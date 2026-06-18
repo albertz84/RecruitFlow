@@ -5,14 +5,14 @@ dotenv.config();
 const requestedDraftProvider = String(process.env.DRAFT_PROVIDER || "auto").toLowerCase();
 
 export const config = {
-  port: Number(process.env.PORT || 8787),
-  host: process.env.HOST || "127.0.0.1",
+  port: Number(process.env.PORT || 3000),
+  host: process.env.HOST || "0.0.0.0",
   clientOrigin: process.env.CLIENT_ORIGIN || "http://localhost:5173",
   sessionSecret: process.env.SESSION_SECRET || "dev-only-change-me",
 
   googleClientId: process.env.GOOGLE_CLIENT_ID || "",
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || `http://localhost:${process.env.PORT || 8787}/api/auth/google/callback`,
+  googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || `http://localhost:${process.env.PORT || 3000}/api/auth/google/callback`,
   adminEmails: String(process.env.ADMIN_EMAILS || "")
     .split(",")
     .map(email => email.trim().toLowerCase())

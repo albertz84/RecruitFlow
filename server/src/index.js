@@ -20,11 +20,22 @@ import { generateDraftsForSchool, rewriteDraft } from "./anthropicClient.js";
 import { importCoachCsv } from "./csvImport.js";
 import { registerAuthRoutes, requireAdmin, requireAuth } from "./auth.js";
 
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || "0.0.0.0";
+
 const app = express();
 app.use(cors({ origin: config.clientOrigin, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "2mb" }));
 registerAuthRoutes(app);
+
+app.get("/health", (req, res) => {
+  res.json({
+    ok: true,
+    service: "recruitflow-api",
+    timestamp: new Date().toISOString()
+  });
+});
 
 app.get("/api/health", (req, res) => {
   const draftProvider = resolvedDraftProvider();
@@ -264,6 +275,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || "Server error" });
 });
 
-app.listen(config.port, config.host, () => {
-  console.log(`RecruitFlow server running on http://${config.host}:${config.port}`);
+app.listen(PORT, HOST, () => {
+  console.log(`RecruitFlow server running on http://${HOST}:${PORT}`);
 });
