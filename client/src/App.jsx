@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clock, Copy, Database, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Upload, Users, X } from "lucide-react";
+import { Check, Clock, Copy, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Users, X } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
@@ -222,8 +222,6 @@ export default function App() {
   const [error, setError] = useState("");
   const [stats, setStats] = useState(null);
   const [health, setHealth] = useState(null);
-  const [csv, setCsv] = useState("");
-  const [adminMsg, setAdminMsg] = useState("");
   const [view, setView] = useState("compose");
   const [connectedUser, setConnectedUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -518,28 +516,10 @@ export default function App() {
     }
   }
 
-  async function importCsv() {
-    setAdminMsg("");
-    if (!csv.trim()) return setAdminMsg("Paste CSV text first.");
-    try {
-      const data = await api("/api/admin/import-coaches", {
-        method: "POST",
-        body: JSON.stringify({ csvText: csv })
-      });
-      setAdminMsg(`Imported ${data.rows} rows. Inserted ${data.inserted}, updated ${data.updated}.`);
-      setCsv("");
-      refreshStats();
-      refreshSchools();
-    } catch (err) {
-      setAdminMsg(err.message);
-    }
-  }
-
   return <main className="app">
     <header className="hero">
       <div className="brand"><div className="logo"><Mail size={22}/></div><div><h1>RecruitFlow</h1><p>Recruiting contact plans + AI-curated coach emails</p></div></div>
       <div className="statusPills">
-        <span className={health?.draftProvider && health.draftProvider !== "local-template" ? "pill good" : "pill warn"}>Draft provider: {health?.draftProvider || "local"}</span>
         <span className="pill">{stats ? `${stats.schools} schools · ${stats.coaches} coaches` : "Loading database"}</span>
         <button className="themeToggle" onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
           {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
@@ -600,7 +580,9 @@ export default function App() {
           </div>
           <Field label="Extra context"><TextArea rows={2} value={profile.additionalNotes} onChange={v => up("additionalNotes", v)} placeholder="Academic interests, camps attended, coach relationship, visit plans..."/></Field>
         </Section>
+      </div>
 
+      <div className="targetCol">
         <Section title="Target schools" icon={<Search size={18}/>}> 
           <div className="targetBuilder">
             <div className="targetBuilderHeader">
@@ -669,29 +651,6 @@ export default function App() {
           <button className="generate" disabled={loading} onClick={generate}>{loading ? <RefreshCw className="spin" size={18}/> : <Mail size={18}/>} {loading ? "Generating..." : `Generate contact plans + AI emails`}</button>
         </Section>
       </div>
-
-      <aside className="rightCol">
-        {connectedUser?.isAdmin && <Section title="Database admin" icon={<Database size={18}/>}> 
-          <div className="dbStats">
-            <div><strong>{stats?.schools ?? "—"}</strong><span>schools</span></div>
-            <div><strong>{stats?.coaches ?? "—"}</strong><span>coaches</span></div>
-            <div><strong>{stats?.emailCoveragePct ?? "—"}%</strong><span>email coverage</span></div>
-          </div>
-          <p className="muted">Paste rows from the CSV template to add real staff contacts. This is the cost-saving moat.</p>
-          <textarea className="input textarea mono" rows={8} value={csv} onChange={e => setCsv(e.target.value)} placeholder="Paste coach_import_template.csv rows here..." />
-          <button className="secondary" onClick={importCsv}><Upload size={16}/>Import CSV</button>
-          {adminMsg && <p className="muted">{adminMsg}</p>}
-        </Section>}
-
-        <Section title="Cost model" icon={<Database size={18}/>}> 
-          <ul className="bullets">
-            <li>Database hit: no web search cost.</li>
-            <li>Regenerate/rewrite: fresh draft text, same saved contact data.</li>
-            <li>Missing school: add or import it before generating.</li>
-            <li>No API key: local template drafts still work.</li>
-          </ul>
-        </Section>
-      </aside>
     </div>
 
     <Results results={results} setResults={setResults} profile={profile} connectedUser={connectedUser} onOpenGmail={openGmailDraft}/>
