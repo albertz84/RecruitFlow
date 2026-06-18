@@ -23,9 +23,33 @@ import { registerAuthRoutes, requireAdmin, requireAuth } from "./auth.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
+const allowedOrigins = (
+  process.env.CLIENT_ORIGINS ||
+  process.env.CLIENT_ORIGIN ||
+  config.clientOrigin ||
+  ""
+)
+  .split(",")
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
+console.log("Allowed CORS origins:", allowedOrigins);
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    console.error("CORS blocked origin:", origin);
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
 
 const app = express();
-app.use(cors({ origin: config.clientOrigin, credentials: true }));
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(express.json({ limit: "2mb" }));
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "2mb" }));
 registerAuthRoutes(app);

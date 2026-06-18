@@ -50,6 +50,7 @@ Set these on Render:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 CLIENT_ORIGIN=https://your-vercel-app.vercel.app
+CLIENT_ORIGINS=https://your-vercel-app.vercel.app,https://your-preview-domain.vercel.app
 SESSION_SECRET=long-random-string
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...

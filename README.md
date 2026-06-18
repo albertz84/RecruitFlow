@@ -90,6 +90,7 @@ Useful defaults:
 PORT=3000
 HOST=0.0.0.0
 CLIENT_ORIGIN=http://localhost:5173
+CLIENT_ORIGINS=http://localhost:5173
 GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
 SESSION_SECRET=change-this-to-a-long-random-string
 DRAFT_PROVIDER=auto
@@ -119,6 +120,7 @@ Then set:
 
 ```txt
 CLIENT_ORIGIN=https://yourdomain.com
+CLIENT_ORIGINS=https://yourdomain.com
 GOOGLE_REDIRECT_URI=https://api.yourdomain.com/api/auth/google/callback
 ```
 
@@ -234,7 +236,7 @@ The frontend must call the deployed backend:
 VITE_API_BASE=https://api.yourdomain.com
 ```
 
-Google login uses an HTTP-only cookie, so the frontend fetches API requests with credentials enabled. Keep the frontend domain in `CLIENT_ORIGIN` so CORS allows those authenticated requests.
+Google login uses an HTTP-only cookie, so the frontend fetches API requests with credentials enabled. Keep the frontend domain in `CLIENT_ORIGIN` or `CLIENT_ORIGINS` so CORS allows those authenticated requests. Use `CLIENT_ORIGINS` for a comma-separated list of production and preview domains.
 
 ## GitHub Checklist
 
