@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clock, Copy, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Users, X } from "lucide-react";
+import { Check, Clock, Copy, CreditCard, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Users, X } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
@@ -231,6 +231,8 @@ export default function App() {
   const [gmailMsg, setGmailMsg] = useState("");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [billingConfig, setBillingConfig] = useState({ enabled: false, packs: [] });
+  const [checkoutLoading, setCheckoutLoading] = useState("");
 
   useEffect(() => {
     loadSession();
@@ -258,6 +260,14 @@ export default function App() {
 
   useEffect(() => {
     if (connectedUser?.email) refreshHistory();
+  }, [connectedUser?.email]);
+
+  useEffect(() => {
+    if (connectedUser?.email) {
+      refreshBillingConfig();
+    } else {
+      setBillingConfig({ enabled: false, packs: [] });
+    }
   }, [connectedUser?.email]);
 
   useEffect(() => {
@@ -294,6 +304,14 @@ export default function App() {
     try { setStats(await api("/api/stats")); } catch { setStats(null); }
   }
 
+  async function refreshBillingConfig() {
+    try {
+      setBillingConfig(await api("/api/billing/config"));
+    } catch {
+      setBillingConfig({ enabled: false, packs: [] });
+    }
+  }
+
   async function refreshSchools() {
     try {
       const data = await api("/api/schools");
@@ -327,7 +345,9 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("auth") === "success") setGmailMsg("Signed in with Google.");
       if (params.get("auth") === "error") setGmailMsg(params.get("message") || "Google sign-in failed.");
-      if (params.has("auth")) {
+      if (params.get("checkout") === "success") setGmailMsg("Payment complete. Credits may take a moment to appear after Stripe confirms the purchase.");
+      if (params.get("checkout") === "canceled") setGmailMsg("Checkout canceled. No credits were added.");
+      if (params.has("auth") || params.has("checkout")) {
         window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash || ""}`);
       }
       setAuthReady(true);
@@ -364,6 +384,25 @@ export default function App() {
     setConnectedUser(null);
     setHistory([]);
     setGmailMsg("");
+  }
+
+  async function buyCredits(packId) {
+    if (!connectedUser?.email) {
+      setGmailMsg("Sign in with Google before buying credits.");
+      return;
+    }
+    setCheckoutLoading(packId);
+    setGmailMsg("");
+    try {
+      const data = await api("/api/billing/create-checkout-session", {
+        method: "POST",
+        body: JSON.stringify({ packId })
+      });
+      window.location.href = data.url;
+    } catch (err) {
+      setGmailMsg(err.message);
+      setCheckoutLoading("");
+    }
   }
 
   async function refreshHistory() {
@@ -554,6 +593,12 @@ export default function App() {
       </div>
     </div>
     {gmailMsg && <p className="inlineNotice">{gmailMsg}</p>}
+    {connectedUser && billingConfig.enabled && <CreditPanel
+      credits={connectedUser.creditsRemaining ?? 25}
+      packs={billingConfig.packs || []}
+      loadingPack={checkoutLoading}
+      onBuy={buyCredits}
+    />}
 
     {view === "history" ? <HistoryPage
       user={connectedUser}
@@ -668,6 +713,22 @@ export default function App() {
       <span>Users must be at least 13.</span>
     </footer>
   </main>;
+}
+
+function CreditPanel({ credits, packs, loadingPack, onBuy }) {
+  if (!packs.length) return null;
+  return <section className="creditPanel">
+    <div>
+      <strong><CreditCard size={17}/>Credits</strong>
+      <span>{credits} remaining. Each generated draft or rewrite uses 1 credit.</span>
+    </div>
+    <div className="creditPackButtons">
+      {packs.map(pack => <button key={pack.id} className="secondary small" disabled={Boolean(loadingPack)} onClick={() => onBuy(pack.id)}>
+        {loadingPack === pack.id ? <RefreshCw className="spin" size={14}/> : <Plus size={14}/>}
+        Buy {pack.label}
+      </button>)}
+    </div>
+  </section>;
 }
 
 function historyStatus(item) {

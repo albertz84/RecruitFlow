@@ -22,6 +22,7 @@ import { recommendContacts, contactPlanSummary } from "./contactRules.js";
 import { generateDraftsForSchool, rewriteDraft } from "./anthropicClient.js";
 import { importCoachCsv } from "./csvImport.js";
 import { registerAuthRoutes, requireAdmin, requireAuth } from "./auth.js";
+import { handleStripeWebhook, registerBillingRoutes } from "./billing.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -73,9 +74,11 @@ const corsOptions = {
 const app = express();
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
 app.use(express.json({ limit: "2mb" }));
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "2mb" }));
 registerAuthRoutes(app);
+registerBillingRoutes(app);
 
 app.get("/health", (req, res) => {
   res.json({

@@ -312,6 +312,44 @@ h1 {
   color: var(--gold);
   font-size: 13px;
 }
+.creditPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: -4px 0 18px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 217, 192, .24);
+  background:
+    linear-gradient(180deg, rgba(56, 217, 192, .075), rgba(240, 184, 75, .025)),
+    var(--surface-58);
+}
+.creditPanel > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+.creditPanel strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--teal-text);
+  font-size: 14px;
+}
+.creditPanel span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.creditPackButtons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .section, .resultCard {
   background:
     linear-gradient(180deg, var(--overlay-045), var(--overlay-012)),
@@ -1162,7 +1200,8 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
   .grid { grid-template-columns: 1fr; }
   .contacts { grid-template-columns: 1fr; }
   .targetSelection.hasItems { grid-template-columns: 1fr; }
-  .workspaceBar, .historyItem { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+  .workspaceBar, .historyItem, .creditPanel { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+  .creditPackButtons { justify-content: flex-start; }
   .historyMetaGrid { grid-template-columns: 1fr; }
   .historyActions { flex-direction: row; flex-wrap: wrap; }
 }
