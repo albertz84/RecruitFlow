@@ -24,6 +24,11 @@ function customInstructionParagraph(profile) {
   return `\n\nA little more context I wanted to include: ${custom}`;
 }
 
+function awardsSentence(profile) {
+  const awards = clean(profile?.athleticAwards, "");
+  return awards ? ` Honors/context I want you to know: ${awards}.` : "";
+}
+
 export function buildLocalDraft({ profile, school, coach, programSummary }) {
   const first = clean(profile.firstName, "");
   const last = clean(profile.lastName, "");
@@ -40,9 +45,10 @@ export function buildLocalDraft({ profile, school, coach, programSummary }) {
   const hudl = clean(profile.hudlLink, "[Hudl link]");
   const contactLine = [profile.email, profile.phone, profile.xHandle].filter(Boolean).join(" | ");
   const customInstructions = customInstructionParagraph(profile);
+  const awards = awardsSentence(profile);
 
   const subject = `${gradYear} ${position} ${name} — ${clean(profile.highSchool, "High School")}`;
-  const body = `Hi ${coachName},\n\nMy name is ${name}, and I am a Class of ${gradYear} ${position} at ${clean(profile.highSchool, "my high school")}${profile.city || profile.state ? ` in ${[profile.city, profile.state].filter(Boolean).join(", ")}` : ""}. I wanted to reach out because I am very interested in ${schoolName}. ${schoolContext}\n\nAs a player, ${strengths}.${growth}${measurable ? ` My current profile is ${measurable}.` : ""}${academics ? ` Academically, I have a ${academics}.` : ""}${customInstructions}\n\nHere is my film: ${hudl}\n\nI would really appreciate it if you could take a look at my film and let me know where I stand as a potential fit for your program. I would also be grateful for any feedback about what you would like to see from me this offseason.\n\nThank you for your time,\n${name}\n${contactLine}`;
+  const body = `Hi ${coachName},\n\nMy name is ${name}, and I am a Class of ${gradYear} ${position} at ${clean(profile.highSchool, "my high school")}${profile.city || profile.state ? ` in ${[profile.city, profile.state].filter(Boolean).join(", ")}` : ""}. I wanted to reach out because I am very interested in ${schoolName}. ${schoolContext}\n\nAs a player, ${strengths}.${growth}${measurable ? ` My current profile is ${measurable}.` : ""}${academics ? ` Academically, I have a ${academics}.` : ""}${awards}${customInstructions}\n\nHere is my film: ${hudl}\n\nI would really appreciate it if you could take a look at my film and let me know where I stand as a potential fit for your program. I would also be grateful for any feedback about what you would like to see from me this offseason.\n\nThank you for your time,\n${name}\n${contactLine}`;
 
   return {
     coach_id: coach?.id || null,
@@ -78,6 +84,7 @@ export function buildLocalRewrite({ profile, school, coach, draft, action }) {
   const academics = [profile?.gpaWeighted && `${profile.gpaWeighted} GPA`, profile?.sat && `${profile.sat} SAT`, profile?.act && `${profile.act} ACT`].filter(Boolean).join(" | ");
   const strengths = clean(profile?.strengths, "I compete hard, learn quickly, and take coaching seriously");
   const customInstructions = customInstructionParagraph(profile);
+  const awards = awardsSentence(profile);
 
   if (action === "dm_version") {
     return {
@@ -101,7 +108,7 @@ export function buildLocalRewrite({ profile, school, coach, draft, action }) {
     return {
       ...base,
       email_subject: base.email_subject || `${gradYear} ${position} ${name}`,
-      email_body: `Hi ${greeting},\n\nMy name is ${name}, and I’m a Class of ${gradYear} ${position} at ${clean(profile?.highSchool, "my high school")}${profile?.city || profile?.state ? ` in ${[profile?.city, profile?.state].filter(Boolean).join(", ")}` : ""}. I’m very interested in ${schoolName} and wanted to send over my film.\n\n${strengths}.${academics ? ` Academically, I have ${academics}.` : ""}${customInstructions}\n\nFilm: ${hudl}\n\nI would really appreciate it if you could review my film and let me know where I stand as a potential fit for your program.\n\nThank you,\n${name}\n${contactLine}`,
+      email_body: `Hi ${greeting},\n\nMy name is ${name}, and I’m a Class of ${gradYear} ${position} at ${clean(profile?.highSchool, "my high school")}${profile?.city || profile?.state ? ` in ${[profile?.city, profile?.state].filter(Boolean).join(", ")}` : ""}. I’m very interested in ${schoolName} and wanted to send over my film.\n\n${strengths}.${academics ? ` Academically, I have ${academics}.` : ""}${awards}${customInstructions}\n\nFilm: ${hudl}\n\nI would really appreciate it if you could review my film and let me know where I stand as a potential fit for your program.\n\nThank you,\n${name}\n${contactLine}`,
       draft_source: "local-rewrite:shorter"
     };
   }

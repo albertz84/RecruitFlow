@@ -6,6 +6,7 @@ create table if not exists public.users (
   google_sub text,
   picture_url text,
   email_verified boolean not null default false,
+  credits_remaining integer not null default 25,
   profile_json jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

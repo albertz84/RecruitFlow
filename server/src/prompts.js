@@ -18,6 +18,7 @@ function buildProfileHighlights(profile = {}) {
   return [
     athletic.length ? `Athletic measurables to consider using when relevant: ${athletic.join(", ")}.` : "No athletic measurables were supplied.",
     academic.length ? `Academic profile to consider using when relevant: ${academic.join(", ")}.` : "No academic metrics were supplied.",
+    profile.athleticAwards ? `Athletic awards, honors, leadership, and verified stats to consider using when relevant: ${profile.athleticAwards}` : "No athletic awards or honors were supplied.",
     profile.xHandle ? `Social/contact handle to include only when useful: ${profile.xHandle}.` : "No X/Twitter handle was supplied.",
     profile.customInstructions ? `User custom email instructions to follow naturally: ${profile.customInstructions}` : "No custom email instructions were supplied.",
     profile.additionalNotes ? `Additional athlete context to consider if useful: ${profile.additionalNotes}` : "No extra context was supplied."
@@ -85,6 +86,9 @@ ${profile.customInstructions || "No custom email instructions were supplied."}
 
 ADDITIONAL CONTEXT
 ${profile.additionalNotes || "No extra context was supplied."}
+
+ATHLETIC AWARDS / HONORS
+${profile.athleticAwards || "No athletic awards or honors were supplied."}
 
 TARGET SCHOOL
 ${JSON.stringify(school, null, 2)}
@@ -168,6 +172,9 @@ ${JSON.stringify(profile, null, 2)}
 
 CUSTOM EMAIL INSTRUCTIONS
 ${profile.customInstructions || "No custom email instructions were supplied."}
+
+ATHLETIC AWARDS / HONORS
+${profile.athleticAwards || "No athletic awards or honors were supplied."}
 
 SCHOOL
 ${JSON.stringify(school, null, 2)}

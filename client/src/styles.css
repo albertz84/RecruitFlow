@@ -266,6 +266,19 @@ h1 {
   font-size: 13px;
   font-weight: 800;
 }
+.creditBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 217, 192, .32);
+  background: rgba(56, 217, 192, .09);
+  color: var(--teal-text);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
 .connectHint {
   color: var(--faint);
   font-size: 12px;
@@ -334,7 +347,7 @@ h1 {
 }
 .field b { color: var(--gold); margin-left: 3px; }
 .field small, .muted { color: var(--muted); font-size: 13px; line-height: 1.45; }
-.customInstructionsPanel {
+.customInstructionsPanel, .profileBuilderPanel {
   margin: 4px 0 12px;
   padding: 12px;
   border-radius: 8px;
@@ -343,20 +356,27 @@ h1 {
     linear-gradient(180deg, rgba(240, 184, 75, .07), rgba(56, 217, 192, .035)),
     var(--surface-62);
 }
-.customInstructionsHeader {
+.profileBuilderPanel {
+  border-color: rgba(56, 217, 192, .24);
+  background:
+    linear-gradient(180deg, rgba(56, 217, 192, .08), rgba(240, 184, 75, .035)),
+    var(--surface-62);
+}
+.customInstructionsHeader, .profileBuilderHeader {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: flex-start;
   margin-bottom: 9px;
 }
-.customInstructionsHeader strong {
+.customInstructionsHeader strong, .profileBuilderHeader strong {
   color: var(--gold);
   font-size: 13px;
   font-weight: 800;
   text-transform: uppercase;
 }
-.customInstructionsHeader span {
+.profileBuilderHeader strong { color: var(--teal-text); }
+.customInstructionsHeader span, .profileBuilderHeader span {
   color: var(--muted);
   font-size: 12px;
   text-align: right;
@@ -1153,8 +1173,8 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
   .targetBuilderHeader, .finderTopline, .finderFilters, .schoolResultRow { grid-template-columns: 1fr; }
   .targetCounter { min-height: 62px; }
   .schoolResultLocation { text-align: left; padding-left: 42px; }
-  .customInstructionsHeader { flex-direction: column; gap: 4px; }
-  .customInstructionsHeader span { text-align: left; max-width: none; }
+  .customInstructionsHeader, .profileBuilderHeader { flex-direction: column; gap: 4px; }
+  .customInstructionsHeader span, .profileBuilderHeader span { text-align: left; max-width: none; }
   .statusPills { width: 100%; }
   .workspaceBar { align-items: stretch; }
   .gmailInput { width: 100%; }

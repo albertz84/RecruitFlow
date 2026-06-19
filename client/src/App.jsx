@@ -34,6 +34,7 @@ const emptyProfile = {
   additionalFilm: "",
   strengths: "",
   weaknesses: "",
+  athleticAwards: "",
   customInstructions: "",
   additionalNotes: ""
 };
@@ -279,7 +280,7 @@ export default function App() {
 
   useEffect(() => {
     setVisibleSchoolCount(SCHOOL_PAGE_SIZE);
-  }, [schoolQuery, schoolDivision, schoolStateFilter, schools.length]);
+  }, [schoolQuery, schoolDivision, schoolStateFilter]);
 
   useEffect(() => {
     if (!loading || !loadingStartedAt) return;
@@ -331,6 +332,15 @@ export default function App() {
       }
       setAuthReady(true);
     }
+  }
+
+  function updateConnectedUser(updates) {
+    setConnectedUser(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, ...updates };
+      localStorage.setItem("recruitflow:gmailUser", JSON.stringify(next));
+      return next;
+    });
   }
 
   function connectGmail() {
@@ -473,7 +483,6 @@ export default function App() {
     if (!school) return;
     if (schools.some(s => s.id === school.id)) return;
     setSchools(prev => [...prev, school]);
-    setSchoolQuery("");
   }
 
   async function generate() {
@@ -500,6 +509,9 @@ export default function App() {
         })
       });
       setResults(data.results || []);
+      if (typeof data.creditsRemaining === "number") {
+        updateConnectedUser({ creditsRemaining: data.creditsRemaining });
+      }
       if (connectedUser?.email) refreshHistory();
       refreshStats();
     } catch (err) {
@@ -530,6 +542,7 @@ export default function App() {
       <div className="gmailConnect">
         {connectedUser ? <>
           <span className="connectedUser"><Check size={15}/>{connectedUser.email}</span>
+          <span className="creditBadge">{connectedUser.creditsRemaining ?? 25} credits</span>
           <button className="secondary small" onClick={disconnectGmail}><LogOut size={14}/>Disconnect</button>
         </> : <>
           <button className="primary smallBtn" onClick={connectGmail} disabled={!authReady || !googleAuthConfigured}><Mail size={15}/>{!authReady ? "Checking login..." : googleAuthConfigured ? "Sign in with Google" : "Google login not configured"}</button>
@@ -565,6 +578,13 @@ export default function App() {
           <Field label="Additional film"><TextInput value={profile.additionalFilm} onChange={v => up("additionalFilm", v)} placeholder="YouTube, MaxPreps, camp clips"/></Field>
           <Field label="Strengths" required><TextArea rows={3} value={profile.strengths} onChange={v => up("strengths", v)} placeholder="What makes you stand out? Position-specific traits, film highlights, captaincy, speed, route running, toughness..."/></Field>
           <Field label="Areas of growth"><TextArea rows={2} value={profile.weaknesses} onChange={v => up("weaknesses", v)} placeholder="What are you actively improving?"/></Field>
+          <div className="profileBuilderPanel">
+            <div className="profileBuilderHeader">
+              <strong>Profile builder</strong>
+              <span>Honors, stats, awards, leadership, camps, and verified football notes</span>
+            </div>
+            <Field label="Athletic awards"><TextArea rows={3} value={profile.athleticAwards} onChange={v => up("athleticAwards", v)} placeholder="All-district, team captain, varsity starter, camp MVP, all-conference, academic all-state, verified season stats..."/></Field>
+          </div>
           <div className="customInstructionsPanel">
             <div className="customInstructionsHeader">
               <strong>Custom email instructions</strong>
@@ -640,7 +660,7 @@ export default function App() {
       </div>
     </div>
 
-    <Results results={results} setResults={setResults} profile={profile} connectedUser={connectedUser} onOpenGmail={openGmailDraft}/>
+    <Results results={results} setResults={setResults} profile={profile} connectedUser={connectedUser} onOpenGmail={openGmailDraft} onCreditsChange={credits => updateConnectedUser({ creditsRemaining: credits })}/>
     </>}
     <footer className="appFooter">
       <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
@@ -757,7 +777,7 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSa
   </section>;
 }
 
-function Results({ results, setResults, profile, connectedUser, onOpenGmail }) {
+function Results({ results, setResults, profile, connectedUser, onOpenGmail, onCreditsChange }) {
   const [rewritingKey, setRewritingKey] = useState("");
   if (!results.length) return null;
 
@@ -781,9 +801,10 @@ function Results({ results, setResults, profile, connectedUser, onOpenGmail }) {
       });
       setResults(prev => prev.map((school, i) => i !== schoolIdx ? school : {
         ...school,
-        dataQuality: { ...school.dataQuality, provider: data.provider || school.dataQuality.provider, draftCached: false },
+        dataQuality: { ...school.dataQuality, draftCached: false },
         drafts: school.drafts.map((d, j) => j !== draftIdx ? d : { ...d, ...(data.draft || {}) })
       }));
+      if (typeof data.creditsRemaining === "number") onCreditsChange?.(data.creditsRemaining);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -803,9 +824,9 @@ function Results({ results, setResults, profile, connectedUser, onOpenGmail }) {
 
   return <section className="results">
     <h2>Generated outreach</h2>
-    <p className="muted">These emails are generated fresh by the configured AI provider and saved to history. Coach/school data is cached; email text is not reused as a hard cache.</p>
+    <p className="muted">Review and edit each draft before opening it in Gmail. Generated emails are saved to your history.</p>
     {results.map((r, i) => <article className="resultCard" key={r.school.id || r.school.name}>
-      <div className="resultHeader"><div><h3>{r.school.name}</h3><p>{r.school.division}{r.school.conference ? ` · ${r.school.conference}` : ""}</p></div><span className="pill">{r.dataQuality.provider}{r.dataQuality.draftCached ? " · cached" : " · fresh draft"}</span></div>
+      <div className="resultHeader"><div><h3>{r.school.name}</h3><p>{r.school.division}{r.school.conference ? ` · ${r.school.conference}` : ""}</p></div></div>
       <div className="quality"><span>{r.dataQuality.contactsInDatabase} DB contacts</span><span>{r.dataQuality.contactsWithEmails} selected emails</span><span>Confidence: {r.dataQuality.schoolConfidence}</span></div>
       {r.programSummary && <p className="summary">{r.programSummary}</p>}
       <h4>Recommended contact order</h4>
