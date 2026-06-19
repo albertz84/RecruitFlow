@@ -14,6 +14,7 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "";
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 const SUPABASE_PAGE_SIZE = 1000;
+const STARTING_CREDITS = 25;
 
 const memoryUsers = new Map();
 const memoryEmails = [];
@@ -165,6 +166,7 @@ function toCoachRow(coach) {
 
 function mapUser(row) {
   if (!row) return null;
+  const credits = Number(row.credits_remaining);
   return {
     id: row.id,
     email: row.gmail_email,
@@ -173,6 +175,7 @@ function mapUser(row) {
     googleSub: row.google_sub || "",
     pictureUrl: row.picture_url || "",
     emailVerified: Boolean(row.email_verified),
+    creditsRemaining: Number.isFinite(credits) ? credits : STARTING_CREDITS,
     profileSnapshot: parseJson(row.profile_json, null),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -191,6 +194,7 @@ function userRowFromInput(input, existing = null) {
     google_sub: input.googleSub || existing?.google_sub || "",
     picture_url: input.pictureUrl || existing?.picture_url || "",
     email_verified: input.emailVerified === true || Boolean(existing?.email_verified),
+    credits_remaining: existing?.credits_remaining ?? input.creditsRemaining ?? STARTING_CREDITS,
     profile_json: existing?.profile_json || input.profileSnapshot || null,
     created_at: existing?.created_at || now,
     updated_at: now,
@@ -396,6 +400,49 @@ export async function updateUserProfile(userEmail, profileSnapshot = {}) {
   user = { ...user, profile_json: profileSnapshot || {}, updated_at: now, last_seen_at: now };
   memoryUsers.set(email, user);
   return mapUser(user);
+}
+
+export async function debitUserCredits(userEmail, amount = 1) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  const debitAmount = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!email || !email.includes("@")) throw new Error("A valid user email is required.");
+  if (debitAmount === 0) return getUserByEmail(email);
+
+  function notEnoughCredits(currentCredits) {
+    const err = new Error(`Not enough credits. You have ${currentCredits} credit${currentCredits === 1 ? "" : "s"} remaining, but this needs ${debitAmount}.`);
+    err.statusCode = 402;
+    return err;
+  }
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return null;
+    const currentCredits = Number.isFinite(Number(user.credits_remaining)) ? Number(user.credits_remaining) : STARTING_CREDITS;
+    if (currentCredits < debitAmount) throw notEnoughCredits(currentCredits);
+    const rows = await supabaseRequest("users", {
+      method: "PATCH",
+      query: { gmail_email: `eq.${email}` },
+      prefer: "return=representation",
+      body: {
+        credits_remaining: currentCredits - debitAmount,
+        last_seen_at: new Date().toISOString()
+      }
+    });
+    return mapUser(rows?.[0]);
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return null;
+  const currentCredits = Number.isFinite(Number(user.credits_remaining)) ? Number(user.credits_remaining) : STARTING_CREDITS;
+  if (currentCredits < debitAmount) throw notEnoughCredits(currentCredits);
+  const updated = {
+    ...user,
+    credits_remaining: currentCredits - debitAmount,
+    updated_at: new Date().toISOString(),
+    last_seen_at: new Date().toISOString()
+  };
+  memoryUsers.set(email, updated);
+  return mapUser(updated);
 }
 
 export async function getEmailHistory() {

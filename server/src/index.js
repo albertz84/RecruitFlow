@@ -10,6 +10,8 @@ import {
   listEmailHistory,
   updateEmailHistoryItem,
   deleteEmailHistoryItem,
+  debitUserCredits,
+  getUserByEmail,
   upsertUser,
   updateUserProfile,
   dataStoreStatus,
@@ -213,7 +215,8 @@ app.post("/api/generate", requireAuth, async (req, res, next) => {
       ? Math.min(Math.max(requestedMaxContacts, 1), 4)
       : Number(config.maxContactsPerSchool || 3);
     const userEmail = req.authUser.email;
-    const resolvedSchools = [];
+    const planned = [];
+    let plannedDrafts = 0;
 
     for (const requested of schools) {
       const requestedName = typeof requested === "string" ? requested : requested.name;
@@ -224,16 +227,25 @@ app.post("/api/generate", requireAuth, async (req, res, next) => {
           error: `${requestedName} is not in the RecruitFlow school database. Add or import the school before generating emails.`
         });
       }
-      resolvedSchools.push(school);
+      const coaches = await coachesForSchool(school.id);
+      const contacts = recommendContacts({ profile, school, coaches, maxContacts });
+      const contactPlan = contactPlanSummary(profile, contacts);
+      plannedDrafts += contacts.length;
+      planned.push({ school, coaches, contacts, contactPlan });
+    }
+
+    const currentUser = await getUserByEmail(userEmail);
+    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 25);
+    if (plannedDrafts > currentCredits) {
+      return res.status(402).json({
+        error: `Not enough credits. You have ${currentCredits} credit${currentCredits === 1 ? "" : "s"} remaining, but this needs ${plannedDrafts}.`,
+        creditsRemaining: currentCredits
+      });
     }
 
     const results = [];
 
-    for (const school of resolvedSchools) {
-      let coaches = await coachesForSchool(school.id);
-
-      const contacts = recommendContacts({ profile, school, coaches, maxContacts });
-      const contactPlan = contactPlanSummary(profile, contacts);
+    for (const { school, coaches, contacts, contactPlan } of planned) {
       const draftPack = await generateDraftsForSchool({
         profile,
         school,
@@ -296,7 +308,10 @@ app.post("/api/generate", requireAuth, async (req, res, next) => {
       results.push(record);
     }
 
-    res.json({ results });
+    const actualDrafts = results.reduce((sum, result) => sum + (result.drafts || []).length, 0);
+    const updatedUser = actualDrafts > 0 ? await debitUserCredits(userEmail, actualDrafts) : currentUser;
+
+    res.json({ results, creditsRemaining: updatedUser?.creditsRemaining ?? currentCredits });
   } catch (err) { next(err); }
 });
 
@@ -307,6 +322,11 @@ app.post("/api/rewrite-draft", requireAuth, async (req, res, next) => {
     if (!profile) return res.status(400).json({ error: "profile is required" });
     if (!school) return res.status(400).json({ error: "school is required" });
     if (!draft) return res.status(400).json({ error: "draft is required" });
+    const currentUser = await getUserByEmail(req.authUser.email);
+    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 25);
+    if (currentCredits < 1) {
+      return res.status(402).json({ error: "Not enough credits. You have 0 credits remaining.", creditsRemaining: 0 });
+    }
     const result = await rewriteDraft({
       profile,
       school,
@@ -314,13 +334,14 @@ app.post("/api/rewrite-draft", requireAuth, async (req, res, next) => {
       draft,
       action: action || "shorter"
     });
-    res.json(result);
+    const updatedUser = await debitUserCredits(req.authUser.email, 1);
+    res.json({ ...result, creditsRemaining: updatedUser?.creditsRemaining ?? currentCredits - 1 });
   } catch (err) { next(err); }
 });
 
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).json({ error: err.message || "Server error" });
+  res.status(err.statusCode || 500).json({ error: err.message || "Server error" });
 });
 
 app.listen(PORT, HOST, () => {
