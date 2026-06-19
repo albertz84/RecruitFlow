@@ -210,6 +210,109 @@ h1 {
   background: var(--surface-17-82);
 }
 
+.introPanel {
+  display: grid;
+  grid-template-columns: minmax(280px, .92fr) minmax(0, 1.28fr);
+  gap: 18px;
+  align-items: stretch;
+  margin: 0 0 18px;
+  padding: 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(122, 139, 162, .22);
+  background:
+    linear-gradient(135deg, rgba(56, 217, 192, .12), transparent 42%),
+    linear-gradient(225deg, rgba(240, 184, 75, .1), transparent 44%),
+    var(--surface-58);
+  box-shadow: var(--shadow);
+}
+.introLead {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 9px;
+}
+.introEyebrow {
+  width: fit-content;
+  color: var(--gold);
+  background: var(--gold-soft);
+  border: 1px solid rgba(240, 184, 75, .26);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.introLead h2 {
+  color: var(--text);
+  font-size: clamp(26px, 3vw, 42px);
+  line-height: 1.03;
+  max-width: 560px;
+}
+.introLead p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.45;
+}
+.introStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+.introStats span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--teal);
+  background: rgba(56, 217, 192, .1);
+  border: 1px solid rgba(56, 217, 192, .25);
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.introStats svg { color: var(--teal); flex: 0 0 auto; }
+.introSteps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.introSteps article {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 13px;
+  border-radius: 8px;
+  border: 1px solid rgba(122, 139, 162, .2);
+  background: var(--surface-72);
+  box-shadow: var(--inner-highlight);
+}
+.stepIcon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--teal);
+  background: rgba(56, 217, 192, .11);
+  border: 1px solid rgba(56, 217, 192, .24);
+}
+.introSteps strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+}
+.introSteps p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1204,6 +1307,7 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
   .creditPackButtons { justify-content: flex-start; }
   .historyMetaGrid { grid-template-columns: 1fr; }
   .historyActions { flex-direction: row; flex-wrap: wrap; }
+  .introPanel { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .app { width: min(100vw - 18px, 1240px); padding-top: 14px; }
@@ -1219,4 +1323,8 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
   .gmailInput { width: 100%; }
   .draftTop, .historyTop { flex-direction: column; }
   .draftActions { justify-content: flex-start; }
+  .introPanel { padding: 14px; }
+  .introLead h2 { font-size: 26px; }
+  .introLead p { font-size: 14px; }
+  .introSteps { grid-template-columns: 1fr; }
 }

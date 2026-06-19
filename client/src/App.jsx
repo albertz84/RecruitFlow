@@ -116,6 +116,41 @@ function Section({ title, icon, children }) {
   return <section className="section"><h2>{icon}{title}</h2>{children}</section>;
 }
 
+function IntroPanel({ stats }) {
+  const databaseLabel = stats ? `${stats.schools} schools and ${stats.coaches} coach contacts` : "the built-in coach database";
+
+  return <section className="introPanel" aria-labelledby="intro-title">
+    <div className="introLead">
+      <span className="introEyebrow">Football recruiting outreach assistant</span>
+      <h2 id="intro-title">Turn your player profile into coach-ready outreach.</h2>
+      <p>
+        RecruitFlow helps athletes build a focused school list, find relevant football staff, and generate personalized email drafts that are ready to review and open in Gmail.
+      </p>
+      <div className="introStats">
+        <span><Check size={15}/>Uses {databaseLabel}</span>
+        <span><History size={15}/>Tracks drafts and sent emails</span>
+      </div>
+    </div>
+    <div className="introSteps" aria-label="How RecruitFlow works">
+      <article>
+        <span className="stepIcon"><Users size={17}/></span>
+        <strong>1. Add your profile</strong>
+        <p>Enter academics, film, position details, verified stats, and the story coaches should understand.</p>
+      </article>
+      <article>
+        <span className="stepIcon"><Search size={17}/></span>
+        <strong>2. Pick target schools</strong>
+        <p>Search by school, state, conference, or level, then choose how many coaches to contact at each program.</p>
+      </article>
+      <article>
+        <span className="stepIcon"><Mail size={17}/></span>
+        <strong>3. Generate and send</strong>
+        <p>Review the contact plan, polish each draft, open it in Gmail, and keep your outreach history organized.</p>
+      </article>
+    </div>
+  </section>;
+}
+
 function SchoolResultRow({ school, onSelect }) {
   return <button className="schoolResultRow" onClick={() => onSelect(school)}>
     <span className="schoolResultMark"><Plus size={15}/></span>
@@ -572,6 +607,8 @@ export default function App() {
         </button>
       </div>
     </header>
+
+    <IntroPanel stats={stats}/>
 
     <div className="workspaceBar">
       <div className="viewTabs">
