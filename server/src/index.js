@@ -33,12 +33,33 @@ const allowedOrigins = (
   .map(origin => origin.trim())
   .filter(Boolean);
 
-console.log("Allowed CORS origins:", allowedOrigins);
+function expandOriginVariants(origins) {
+  const expanded = new Set(origins);
+  for (const origin of origins) {
+    try {
+      const url = new URL(origin);
+      if (url.hostname.startsWith("www.")) {
+        url.hostname = url.hostname.slice(4);
+        expanded.add(url.origin);
+      } else {
+        url.hostname = `www.${url.hostname}`;
+        expanded.add(url.origin);
+      }
+    } catch {
+      // Ignore malformed origins; the exact value remains in the allowlist.
+    }
+  }
+  return [...expanded];
+}
+
+const expandedAllowedOrigins = expandOriginVariants(allowedOrigins);
+
+console.log("Allowed CORS origins:", expandedAllowedOrigins);
 
 const corsOptions = {
   origin(origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (expandedAllowedOrigins.includes(origin)) return callback(null, true);
     console.error("CORS blocked origin:", origin);
     return callback(new Error(`CORS blocked origin: ${origin}`));
   },
