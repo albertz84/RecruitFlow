@@ -9,22 +9,16 @@ const stripe = config.stripeSecretKey ? new Stripe(config.stripeSecretKey, {
 
 const CREDIT_PACKS = [
   {
-    id: "credits_25",
-    label: "25 credits",
-    credits: 25,
-    priceId: config.stripeCreditPrice25
+    id: "credits_50",
+    label: "50 credits",
+    credits: 50,
+    priceId: config.stripeCreditPrice50
   },
   {
-    id: "credits_75",
-    label: "75 credits",
-    credits: 75,
-    priceId: config.stripeCreditPrice75
-  },
-  {
-    id: "credits_200",
-    label: "200 credits",
-    credits: 200,
-    priceId: config.stripeCreditPrice200
+    id: "credits_250",
+    label: "250 credits",
+    credits: 250,
+    priceId: config.stripeCreditPrice250
   }
 ];
 

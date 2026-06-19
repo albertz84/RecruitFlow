@@ -33,9 +33,8 @@ export const config = {
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   stripeSuccessUrl: process.env.STRIPE_SUCCESS_URL || "",
   stripeCancelUrl: process.env.STRIPE_CANCEL_URL || "",
-  stripeCreditPrice25: process.env.STRIPE_PRICE_25_CREDITS || "",
-  stripeCreditPrice75: process.env.STRIPE_PRICE_75_CREDITS || "",
-  stripeCreditPrice200: process.env.STRIPE_PRICE_200_CREDITS || ""
+  stripeCreditPrice50: process.env.STRIPE_PRICE_50_CREDITS || "",
+  stripeCreditPrice250: process.env.STRIPE_PRICE_250_CREDITS || ""
 };
 
 export function resolvedDraftProvider() {
