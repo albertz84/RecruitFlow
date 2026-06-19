@@ -3,7 +3,9 @@ import { config } from "./config.js";
 import { requireAuth } from "./auth.js";
 import { grantStripeCheckoutCredits } from "./database.js";
 
-const stripe = config.stripeSecretKey ? new Stripe(config.stripeSecretKey) : null;
+const stripe = config.stripeSecretKey ? new Stripe(config.stripeSecretKey, {
+  apiVersion: "2026-05-27.dahlia"
+}) : null;
 
 const CREDIT_PACKS = [
   {
