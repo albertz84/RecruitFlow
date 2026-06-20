@@ -1,4 +1,0 @@
-
-> recruitflow@0.2.0 import:supabase
-> node ./scripts/import-supabase-data.mjs
-
