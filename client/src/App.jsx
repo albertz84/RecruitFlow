@@ -122,6 +122,10 @@ function Section({ title, icon, children }) {
   return <section className="section"><h2>{icon}{title}</h2>{children}</section>;
 }
 
+function RecruitFlowLogo() {
+  return <img src="/assets/recruitflow-logo.png" alt="RecruitFlow logo" />;
+}
+
 function IntroPanel() {
   return <section className="introPanel" aria-labelledby="intro-title">
     <div className="introLead">
@@ -595,7 +599,7 @@ export default function App() {
 
   return <main className="app">
     <header className="hero">
-      <div className="brand"><div className="logo"><Mail size={22}/></div><div><h1>RecruitFlow</h1><p>Recruiting outreach, simplified.</p></div></div>
+      <div className="brand"><div className="logo"><RecruitFlowLogo /></div><div><h1>RecruitFlow</h1><p>Recruiting outreach, simplified.</p></div></div>
       <div className="statusPills">
         <button className="themeToggle" onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
           {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
