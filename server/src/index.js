@@ -238,7 +238,7 @@ app.post("/api/generate", requireAuth, async (req, res, next) => {
     }
 
     const currentUser = await getUserByEmail(userEmail);
-    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 25);
+    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 15);
     if (plannedDrafts > currentCredits) {
       return res.status(402).json({
         error: `Not enough credits. You have ${currentCredits} credit${currentCredits === 1 ? "" : "s"} remaining, but this needs ${plannedDrafts}.`,
@@ -326,7 +326,7 @@ app.post("/api/rewrite-draft", requireAuth, async (req, res, next) => {
     if (!school) return res.status(400).json({ error: "school is required" });
     if (!draft) return res.status(400).json({ error: "draft is required" });
     const currentUser = await getUserByEmail(req.authUser.email);
-    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 25);
+    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 15);
     if (currentCredits < 1) {
       return res.status(402).json({ error: "Not enough credits. You have 0 credits remaining.", creditsRemaining: 0 });
     }

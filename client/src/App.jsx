@@ -634,7 +634,7 @@ export default function App() {
       <div className="gmailConnect">
         {connectedUser ? <>
           <span className="connectedUser"><Check size={15}/>{connectedUser.email}</span>
-          <span className="creditBadge">{connectedUser.creditsRemaining ?? 25} credits</span>
+          <span className="creditBadge">{connectedUser.creditsRemaining ?? 15} credits</span>
           <button className="secondary small" onClick={disconnectGmail}><LogOut size={14}/>Disconnect</button>
         </> : <>
           <button className="primary smallBtn" onClick={connectGmail} disabled={!authReady || !googleAuthConfigured}><Mail size={15}/>{!authReady ? "Checking login..." : googleAuthConfigured ? "Sign in with Google" : "Google login not configured"}</button>
@@ -647,7 +647,7 @@ export default function App() {
     </div>
     {gmailMsg && <p className="inlineNotice">{gmailMsg}</p>}
     {connectedUser && billingConfig.enabled && <CreditPanel
-      credits={connectedUser.creditsRemaining ?? 25}
+      credits={connectedUser.creditsRemaining ?? 15}
       packs={billingConfig.packs || []}
       loadingPack={checkoutLoading}
       onBuy={buyCredits}
@@ -778,7 +778,7 @@ function CreditPanel({ credits, packs, loadingPack, onBuy }) {
     <div className="creditPackButtons">
       {packs.map(pack => <button key={pack.id} className="secondary small" disabled={Boolean(loadingPack)} onClick={() => onBuy(pack.id)}>
         {loadingPack === pack.id ? <RefreshCw className="spin" size={14}/> : <Plus size={14}/>}
-        Buy {pack.label}
+        Buy {pack.label}{pack.priceLabel ? ` - ${pack.priceLabel}` : ""}
       </button>)}
     </div>
   </section>;

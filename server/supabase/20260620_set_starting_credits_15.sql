@@ -1,5 +1,5 @@
 alter table public.users
-add column if not exists credits_remaining integer not null default 15;
+alter column credits_remaining set default 15;
 
 update public.users
 set credits_remaining = 15

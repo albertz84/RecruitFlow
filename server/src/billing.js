@@ -9,16 +9,18 @@ const stripe = config.stripeSecretKey ? new Stripe(config.stripeSecretKey, {
 
 const CREDIT_PACKS = [
   {
-    id: "credits_50",
-    label: "50 credits",
-    credits: 50,
-    priceId: config.stripeCreditPrice50
+    id: "credits_30",
+    label: "30 credits",
+    priceLabel: "$5",
+    credits: 30,
+    priceId: config.stripeCreditPrice30
   },
   {
-    id: "credits_250",
-    label: "250 credits",
-    credits: 250,
-    priceId: config.stripeCreditPrice250
+    id: "credits_200",
+    label: "200 credits",
+    priceLabel: "$19",
+    credits: 200,
+    priceId: config.stripeCreditPrice200
   }
 ];
 
@@ -30,7 +32,7 @@ function publicBillingConfig() {
   const packs = configuredPacks();
   return {
     enabled: Boolean(stripe && packs.length),
-    packs: packs.map(({ id, label, credits }) => ({ id, label, credits }))
+    packs: packs.map(({ id, label, priceLabel, credits }) => ({ id, label, priceLabel, credits }))
   };
 }
 

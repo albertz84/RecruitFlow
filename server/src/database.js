@@ -14,7 +14,7 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "";
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 const SUPABASE_PAGE_SIZE = 1000;
-const STARTING_CREDITS = 25;
+const STARTING_CREDITS = 15;
 
 const memoryUsers = new Map();
 const memoryEmails = [];
