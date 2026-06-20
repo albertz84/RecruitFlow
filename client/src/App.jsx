@@ -85,7 +85,7 @@ function storedProfile(email = "") {
   return emptyProfile;
 }
 
-function gmailComposeUrl({ to, subject, body }) {
+function gmailWebComposeUrl({ to, subject, body, accountEmail }) {
   const params = new URLSearchParams({
     view: "cm",
     fs: "1",
@@ -93,7 +93,33 @@ function gmailComposeUrl({ to, subject, body }) {
     su: subject || "",
     body: body || ""
   });
+  if (accountEmail) params.set("authuser", accountEmail);
   return `https://mail.google.com/mail/?${params.toString()}`;
+}
+
+function gmailAppComposeUrl({ to, subject, body }) {
+  const params = new URLSearchParams({
+    to: to || "",
+    subject: subject || "",
+    body: body || ""
+  });
+  return `googlegmail://co?${params.toString()}`;
+}
+
+function isMobileBrowser() {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+}
+
+function openGmailCompose({ to, subject, body, accountEmail }) {
+  const webUrl = gmailWebComposeUrl({ to, subject, body, accountEmail });
+  if (!isMobileBrowser()) {
+    window.open(webUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  window.open(webUrl, "_blank", "noopener,noreferrer");
+  window.location.href = gmailAppComposeUrl({ to, subject, body });
 }
 
 function Field({ label, required, children, hint }) {
@@ -116,9 +142,7 @@ function Section({ title, icon, children }) {
   return <section className="section"><h2>{icon}{title}</h2>{children}</section>;
 }
 
-function IntroPanel({ stats }) {
-  const databaseLabel = stats ? `${stats.schools} schools and ${stats.coaches} coach contacts` : "the built-in coach database";
-
+function IntroPanel() {
   return <section className="introPanel" aria-labelledby="intro-title">
     <div className="introLead">
       <span className="introEyebrow">Football recruiting outreach assistant</span>
@@ -127,7 +151,7 @@ function IntroPanel({ stats }) {
         RecruitFlow helps athletes build a focused school list, find relevant football staff, and generate personalized email drafts that are ready to review and open in Gmail.
       </p>
       <div className="introStats">
-        <span><Check size={15}/>Uses {databaseLabel}</span>
+        <span><Check size={15}/>Uses the private coach database</span>
         <span><History size={15}/>Tracks drafts and sent emails</span>
       </div>
     </div>
@@ -256,7 +280,6 @@ export default function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [loadingStartedAt, setLoadingStartedAt] = useState(null);
   const [error, setError] = useState("");
-  const [stats, setStats] = useState(null);
   const [health, setHealth] = useState(null);
   const [view, setView] = useState("compose");
   const [connectedUser, setConnectedUser] = useState(null);
@@ -272,7 +295,6 @@ export default function App() {
   useEffect(() => {
     loadSession();
     api("/api/health").then(setHealth).catch(() => setHealth(null));
-    refreshStats();
   }, []);
 
   useEffect(() => {
@@ -334,10 +356,6 @@ export default function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [loading, loadingStartedAt]);
-
-  async function refreshStats() {
-    try { setStats(await api("/api/stats")); } catch { setStats(null); }
-  }
 
   async function refreshBillingConfig() {
     try {
@@ -474,12 +492,12 @@ export default function App() {
       setGmailMsg("Sign in with Google first so this draft is saved to your history.");
       return;
     }
-    const url = gmailComposeUrl({
+    openGmailCompose({
       to: draft.coach_email || "",
       subject: draft.email_subject || "",
-      body: draft.email_body || ""
+      body: draft.email_body || "",
+      accountEmail: connectedUser.email
     });
-    window.open(url, "_blank", "noopener,noreferrer");
     if (draft.historyId) {
       updateHistoryItem(draft.historyId, {
         status: "opened_gmail",
@@ -493,12 +511,12 @@ export default function App() {
   }
 
   function openHistoryInGmail(item) {
-    const url = gmailComposeUrl({
+    openGmailCompose({
       to: item.coach?.email || "",
       subject: item.email_subject || "",
-      body: item.email_body || ""
+      body: item.email_body || "",
+      accountEmail: connectedUser?.email || item.userEmail || ""
     });
-    window.open(url, "_blank", "noopener,noreferrer");
     updateHistoryItem(item.id, { status: "opened_gmail" }).catch(err => setGmailMsg(err.message));
   }
 
@@ -587,7 +605,6 @@ export default function App() {
         updateConnectedUser({ creditsRemaining: data.creditsRemaining });
       }
       if (connectedUser?.email) refreshHistory();
-      refreshStats();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -600,7 +617,6 @@ export default function App() {
     <header className="hero">
       <div className="brand"><div className="logo"><Mail size={22}/></div><div><h1>RecruitFlow</h1><p>Recruiting contact plans + AI-curated coach emails</p></div></div>
       <div className="statusPills">
-        <span className="pill">{stats ? `${stats.schools} schools · ${stats.coaches} coaches` : "Loading database"}</span>
         <button className="themeToggle" onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
           {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
           <span>{theme === "dark" ? "Light" : "Dark"}</span>
@@ -608,7 +624,7 @@ export default function App() {
       </div>
     </header>
 
-    <IntroPanel stats={stats}/>
+    <IntroPanel/>
 
     <div className="workspaceBar">
       <div className="viewTabs">
