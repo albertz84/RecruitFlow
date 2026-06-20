@@ -20,8 +20,8 @@ function buildProfileHighlights(profile = {}) {
     academic.length ? `Academic profile to consider using when relevant: ${academic.join(", ")}.` : "No academic metrics were supplied.",
     profile.athleticAwards ? `Athletic awards, honors, leadership, and verified stats to consider using when relevant: ${profile.athleticAwards}` : "No athletic awards or honors were supplied.",
     profile.xHandle ? `Social/contact handle to include only when useful: ${profile.xHandle}.` : "No X/Twitter handle was supplied.",
-    profile.customInstructions ? `User custom email instructions to follow naturally: ${profile.customInstructions}` : "No custom email instructions were supplied.",
-    profile.additionalNotes ? `Additional athlete context to consider if useful: ${profile.additionalNotes}` : "No extra context was supplied."
+    profile.additionalNotes ? `Extra athlete context to understand and consider when useful: ${profile.additionalNotes}` : "No extra context was supplied.",
+    profile.customInstructions ? `Specific user instructions that should be addressed in the email: ${profile.customInstructions}` : "No custom email instructions were supplied."
   ].join("\n");
 }
 
@@ -36,7 +36,8 @@ Core writing principles:
 - Do not overhype. Confidence is good; arrogance is not.
 - Personalization matters more than length. Mention one honest reason the school/program/contact makes sense when supplied.
 - Use only supplied facts. Never invent stats, offers, coach relationships, staff changes, scheme details, awards, records, emails, visits, or conversations.
-- Follow the athlete's custom email instructions when they are supplied, such as an injury comeback story, personal background, academic interest, camp request, visit plan, or a specific question they want included. Work it in naturally and briefly; do not make the whole email about it unless the instruction clearly asks for that.
+- Treat extra context as background that helps you understand the athlete, such as an injury, school transfer, recruiting situation, academic interest, family move, or other context. Use it only when it helps the email feel clearer, honest, and relevant.
+- Treat custom email instructions as the athlete's specific directions for this draft. When supplied, address them naturally and briefly, such as mentioning an upcoming camp, visit plan, specific question, academic interest, or detail the athlete explicitly wants included.
 - If custom instructions conflict with other supplied facts or ask you to claim something not provided, ignore the conflicting part instead of inventing.
 - Make it easy for a busy coach to scan on a phone and evaluate the athlete quickly: grad year, position, high school/location, strongest proof points, film link, and a clear ask.
 - Subject lines should be specific and compact, ideally around 50-75 characters when possible: name, class year, position, location, standout stat/GPA/test score, and/or film/video.
@@ -93,7 +94,7 @@ ${buildProfileHighlights(profile)}
 CUSTOM EMAIL INSTRUCTIONS
 ${profile.customInstructions || "No custom email instructions were supplied."}
 
-ADDITIONAL CONTEXT
+EXTRA CONTEXT
 ${profile.additionalNotes || "No extra context was supplied."}
 
 ATHLETIC AWARDS / HONORS
@@ -136,7 +137,9 @@ Rules:
 - Regional recruiter draft: mention athlete location/region.
 - Include Hudl or film link prominently. If a film link is supplied, make it easy to find and do not bury it in a long paragraph.
 - Include academics naturally, especially if strong.
-- Follow CUSTOM EMAIL INSTRUCTIONS when supplied. Include injury stories, personal stories, special requests, camp questions, academic interests, or context in a way that sounds like the athlete wrote it.
+- Use EXTRA CONTEXT as background. Include it only when it helps explain the athlete's situation or makes the outreach more relevant.
+- Follow CUSTOM EMAIL INSTRUCTIONS when supplied. These are the athlete's specific instructions for the generated emails and should be addressed unless they conflict with known facts or require inventing information.
+- Custom instructions can include things like an upcoming camp, visit plan, specific question for the coach, academic interest, or a detail the athlete wants mentioned.
 - Keep custom instruction content concise unless the athlete specifically asks for a longer story.
 - End with a clear ask: film review, feedback, call, camp invite, or next steps.
 - Avoid generic filler, flattery, and AI-sounding language.
@@ -183,6 +186,9 @@ ${JSON.stringify(profile, null, 2)}
 CUSTOM EMAIL INSTRUCTIONS
 ${profile.customInstructions || "No custom email instructions were supplied."}
 
+EXTRA CONTEXT
+${profile.additionalNotes || "No extra context was supplied."}
+
 ATHLETIC AWARDS / HONORS
 ${profile.athleticAwards || "No athletic awards or honors were supplied."}
 
@@ -200,7 +206,8 @@ Rules:
 - Preserve factual details.
 - Do not invent offers, relationships, coach responses, stats, records, or emails.
 - Keep the athlete's voice natural.
-- Preserve and follow the athlete's custom email instructions when supplied, unless they conflict with known facts.
+- Use extra context as background only when it makes the rewrite clearer or more relevant.
+- Preserve and follow the athlete's custom email instructions when supplied. They are specific user instructions that should be addressed unless they conflict with known facts.
 - Include the film link unless making a very short DM and it would not fit.
 - If coach email is missing, do not invent it.
 

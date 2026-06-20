@@ -126,9 +126,9 @@ function IntroPanel() {
   return <section className="introPanel" aria-labelledby="intro-title">
     <div className="introLead">
       <span className="introEyebrow">Football recruiting outreach assistant</span>
-      <h2 id="intro-title">Turn your player profile into coach-ready outreach.</h2>
+      <h2 id="intro-title">Recruiting outreach, simplified.</h2>
       <p>
-        RecruitFlow helps athletes build a focused school list, find relevant football staff, and generate personalized email drafts that are ready to review and open in Gmail.
+        Build your athlete profile, find the right college coaches, and generate personalized recruiting emails in minutes.
       </p>
       <div className="introStats">
         <span><Check size={15}/>Uses the private coach database</span>
@@ -595,7 +595,7 @@ export default function App() {
 
   return <main className="app">
     <header className="hero">
-      <div className="brand"><div className="logo"><Mail size={22}/></div><div><h1>RecruitFlow</h1><p>Recruiting contact plans + AI-curated coach emails</p></div></div>
+      <div className="brand"><div className="logo"><Mail size={22}/></div><div><h1>RecruitFlow</h1><p>Recruiting outreach, simplified.</p></div></div>
       <div className="statusPills">
         <button className="themeToggle" onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
           {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
@@ -663,14 +663,14 @@ export default function App() {
             </div>
             <Field label="Athletic awards"><TextArea rows={3} value={profile.athleticAwards} onChange={v => up("athleticAwards", v)} placeholder="All-district, team captain, varsity starter, camp MVP, all-conference, academic all-state, verified season stats..."/></Field>
           </div>
+          <Field label="Extra context"><TextArea rows={3} value={profile.additionalNotes} onChange={v => up("additionalNotes", v)} placeholder="Background the email writer should understand, such as an injury, school transfer, recruiting situation, academic interest, family move, or other context that may be useful." /></Field>
           <div className="customInstructionsPanel">
             <div className="customInstructionsHeader">
               <strong>Custom email instructions</strong>
-              <span>Personal story, injury comeback, special request, or details you want included</span>
+              <span>Specific instructions the generated emails should address</span>
             </div>
-            <TextArea rows={4} value={profile.customInstructions} onChange={v => up("customInstructions", v)} placeholder="Example: Mention that I missed part of junior year with a shoulder injury, came back for the final 4 games, and would like feedback on whether I should attend their summer camp."/>
+            <TextArea rows={4} value={profile.customInstructions} onChange={v => up("customInstructions", v)} placeholder="Example: Mention that I will be attending their June prospect camp and ask what I should send before camp so their staff can evaluate me."/>
           </div>
-          <Field label="Extra context"><TextArea rows={2} value={profile.additionalNotes} onChange={v => up("additionalNotes", v)} placeholder="Academic interests, camps attended, coach relationship, visit plans..."/></Field>
         </Section>
       </div>
 
