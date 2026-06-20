@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clock, Copy, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Users, X } from "lucide-react";
+import { Check, Clock, Copy, CreditCard, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Users, X } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
@@ -85,7 +85,7 @@ function storedProfile(email = "") {
   return emptyProfile;
 }
 
-function gmailComposeUrl({ to, subject, body }) {
+function gmailWebComposeUrl({ to, subject, body, accountEmail }) {
   const params = new URLSearchParams({
     view: "cm",
     fs: "1",
@@ -93,7 +93,13 @@ function gmailComposeUrl({ to, subject, body }) {
     su: subject || "",
     body: body || ""
   });
+  if (accountEmail) params.set("authuser", accountEmail);
   return `https://mail.google.com/mail/?${params.toString()}`;
+}
+
+function openGmailCompose({ to, subject, body, accountEmail }) {
+  const webUrl = gmailWebComposeUrl({ to, subject, body, accountEmail });
+  window.open(webUrl, "_blank", "noopener,noreferrer");
 }
 
 function Field({ label, required, children, hint }) {
@@ -114,6 +120,39 @@ function Select({ value, onChange, options }) {
 
 function Section({ title, icon, children }) {
   return <section className="section"><h2>{icon}{title}</h2>{children}</section>;
+}
+
+function IntroPanel() {
+  return <section className="introPanel" aria-labelledby="intro-title">
+    <div className="introLead">
+      <span className="introEyebrow">Football recruiting outreach assistant</span>
+      <h2 id="intro-title">Turn your player profile into coach-ready outreach.</h2>
+      <p>
+        RecruitFlow helps athletes build a focused school list, find relevant football staff, and generate personalized email drafts that are ready to review and open in Gmail.
+      </p>
+      <div className="introStats">
+        <span><Check size={15}/>Uses the private coach database</span>
+        <span><History size={15}/>Tracks drafts and sent emails</span>
+      </div>
+    </div>
+    <div className="introSteps" aria-label="How RecruitFlow works">
+      <article>
+        <span className="stepIcon"><Users size={17}/></span>
+        <strong>1. Add your profile</strong>
+        <p>Enter academics, film, position details, verified stats, and the story coaches should understand.</p>
+      </article>
+      <article>
+        <span className="stepIcon"><Search size={17}/></span>
+        <strong>2. Pick target schools</strong>
+        <p>Search by school, state, conference, or level, then choose how many coaches to contact at each program.</p>
+      </article>
+      <article>
+        <span className="stepIcon"><Mail size={17}/></span>
+        <strong>3. Generate and send</strong>
+        <p>Review the contact plan, polish each draft, open it in Gmail, and keep your outreach history organized.</p>
+      </article>
+    </div>
+  </section>;
 }
 
 function SchoolResultRow({ school, onSelect }) {
@@ -221,7 +260,6 @@ export default function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [loadingStartedAt, setLoadingStartedAt] = useState(null);
   const [error, setError] = useState("");
-  const [stats, setStats] = useState(null);
   const [health, setHealth] = useState(null);
   const [view, setView] = useState("compose");
   const [connectedUser, setConnectedUser] = useState(null);
@@ -231,11 +269,12 @@ export default function App() {
   const [gmailMsg, setGmailMsg] = useState("");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [billingConfig, setBillingConfig] = useState({ enabled: false, packs: [] });
+  const [checkoutLoading, setCheckoutLoading] = useState("");
 
   useEffect(() => {
     loadSession();
     api("/api/health").then(setHealth).catch(() => setHealth(null));
-    refreshStats();
   }, []);
 
   useEffect(() => {
@@ -258,6 +297,14 @@ export default function App() {
 
   useEffect(() => {
     if (connectedUser?.email) refreshHistory();
+  }, [connectedUser?.email]);
+
+  useEffect(() => {
+    if (connectedUser?.email) {
+      refreshBillingConfig();
+    } else {
+      setBillingConfig({ enabled: false, packs: [] });
+    }
   }, [connectedUser?.email]);
 
   useEffect(() => {
@@ -290,8 +337,12 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loading, loadingStartedAt]);
 
-  async function refreshStats() {
-    try { setStats(await api("/api/stats")); } catch { setStats(null); }
+  async function refreshBillingConfig() {
+    try {
+      setBillingConfig(await api("/api/billing/config"));
+    } catch {
+      setBillingConfig({ enabled: false, packs: [] });
+    }
   }
 
   async function refreshSchools() {
@@ -327,7 +378,9 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("auth") === "success") setGmailMsg("Signed in with Google.");
       if (params.get("auth") === "error") setGmailMsg(params.get("message") || "Google sign-in failed.");
-      if (params.has("auth")) {
+      if (params.get("checkout") === "success") setGmailMsg("Payment complete. Credits may take a moment to appear after Stripe confirms the purchase.");
+      if (params.get("checkout") === "canceled") setGmailMsg("Checkout canceled. No credits were added.");
+      if (params.has("auth") || params.has("checkout")) {
         window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash || ""}`);
       }
       setAuthReady(true);
@@ -366,6 +419,25 @@ export default function App() {
     setGmailMsg("");
   }
 
+  async function buyCredits(packId) {
+    if (!connectedUser?.email) {
+      setGmailMsg("Sign in with Google before buying credits.");
+      return;
+    }
+    setCheckoutLoading(packId);
+    setGmailMsg("");
+    try {
+      const data = await api("/api/billing/create-checkout-session", {
+        method: "POST",
+        body: JSON.stringify({ packId })
+      });
+      window.location.href = data.url;
+    } catch (err) {
+      setGmailMsg(err.message);
+      setCheckoutLoading("");
+    }
+  }
+
   async function refreshHistory() {
     if (!connectedUser?.email) return;
     setHistoryLoading(true);
@@ -400,12 +472,12 @@ export default function App() {
       setGmailMsg("Sign in with Google first so this draft is saved to your history.");
       return;
     }
-    const url = gmailComposeUrl({
+    openGmailCompose({
       to: draft.coach_email || "",
       subject: draft.email_subject || "",
-      body: draft.email_body || ""
+      body: draft.email_body || "",
+      accountEmail: connectedUser.email
     });
-    window.open(url, "_blank", "noopener,noreferrer");
     if (draft.historyId) {
       updateHistoryItem(draft.historyId, {
         status: "opened_gmail",
@@ -419,12 +491,12 @@ export default function App() {
   }
 
   function openHistoryInGmail(item) {
-    const url = gmailComposeUrl({
+    openGmailCompose({
       to: item.coach?.email || "",
       subject: item.email_subject || "",
-      body: item.email_body || ""
+      body: item.email_body || "",
+      accountEmail: connectedUser?.email || item.userEmail || ""
     });
-    window.open(url, "_blank", "noopener,noreferrer");
     updateHistoryItem(item.id, { status: "opened_gmail" }).catch(err => setGmailMsg(err.message));
   }
 
@@ -513,7 +585,6 @@ export default function App() {
         updateConnectedUser({ creditsRemaining: data.creditsRemaining });
       }
       if (connectedUser?.email) refreshHistory();
-      refreshStats();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -526,13 +597,14 @@ export default function App() {
     <header className="hero">
       <div className="brand"><div className="logo"><Mail size={22}/></div><div><h1>RecruitFlow</h1><p>Recruiting contact plans + AI-curated coach emails</p></div></div>
       <div className="statusPills">
-        <span className="pill">{stats ? `${stats.schools} schools · ${stats.coaches} coaches` : "Loading database"}</span>
         <button className="themeToggle" onClick={() => setTheme(prev => prev === "dark" ? "light" : "dark")} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
           {theme === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
           <span>{theme === "dark" ? "Light" : "Dark"}</span>
         </button>
       </div>
     </header>
+
+    <IntroPanel/>
 
     <div className="workspaceBar">
       <div className="viewTabs">
@@ -542,7 +614,7 @@ export default function App() {
       <div className="gmailConnect">
         {connectedUser ? <>
           <span className="connectedUser"><Check size={15}/>{connectedUser.email}</span>
-          <span className="creditBadge">{connectedUser.creditsRemaining ?? 25} credits</span>
+          <span className="creditBadge">{connectedUser.creditsRemaining ?? 15} credits</span>
           <button className="secondary small" onClick={disconnectGmail}><LogOut size={14}/>Disconnect</button>
         </> : <>
           <button className="primary smallBtn" onClick={connectGmail} disabled={!authReady || !googleAuthConfigured}><Mail size={15}/>{!authReady ? "Checking login..." : googleAuthConfigured ? "Sign in with Google" : "Google login not configured"}</button>
@@ -554,6 +626,12 @@ export default function App() {
       </div>
     </div>
     {gmailMsg && <p className="inlineNotice">{gmailMsg}</p>}
+    {connectedUser && billingConfig.enabled && <CreditPanel
+      credits={connectedUser.creditsRemaining ?? 15}
+      packs={billingConfig.packs || []}
+      loadingPack={checkoutLoading}
+      onBuy={buyCredits}
+    />}
 
     {view === "history" ? <HistoryPage
       user={connectedUser}
@@ -568,14 +646,14 @@ export default function App() {
     <div className="grid">
       <div className="leftCol">
         <Section title="Athlete profile" icon={<Users size={18}/>}> 
-          <div className="two"><Field label="First name" required><TextInput value={profile.firstName} onChange={v => up("firstName", v)} placeholder="Albert"/></Field><Field label="Last name" required><TextInput value={profile.lastName} onChange={v => up("lastName", v)} placeholder="Zhou"/></Field></div>
-          <div className="three"><Field label="Email" required><TextInput value={profile.email} onChange={v => up("email", v)} placeholder="athlete@email.com"/></Field><Field label="Phone"><TextInput value={profile.phone} onChange={v => up("phone", v)} placeholder="(555) 123-4567"/></Field><Field label="X / Twitter"><TextInput value={profile.xHandle} onChange={v => up("xHandle", v)} placeholder="@athlete"/></Field></div>
-          <div className="four"><Field label="High school" required><TextInput value={profile.highSchool} onChange={v => up("highSchool", v)} placeholder="St. John's School"/></Field><Field label="City"><TextInput value={profile.city} onChange={v => up("city", v)} placeholder="Houston"/></Field><Field label="State"><Select value={profile.state} onChange={v => up("state", v)} options={STATES}/></Field><Field label="Grad year"><TextInput value={profile.gradYear} onChange={v => up("gradYear", v)} placeholder="2027"/></Field></div>
-          <div className="four"><Field label="Position" required><Select value={profile.position} onChange={v => up("position", v)} options={POSITIONS}/></Field><Field label="Height"><TextInput value={profile.height} onChange={v => up("height", v)} placeholder={`6'0"`}/></Field><Field label="Weight"><TextInput value={profile.weight} onChange={v => up("weight", v)} placeholder="173"/></Field><Field label="40"><TextInput value={profile.fortyYard} onChange={v => up("fortyYard", v)} placeholder="4.65"/></Field></div>
-          <div className="four"><Field label="Bench"><TextInput value={profile.benchPress} onChange={v => up("benchPress", v)} placeholder="225"/></Field><Field label="Squat"><TextInput value={profile.squat} onChange={v => up("squat", v)} placeholder="365"/></Field><Field label="Vertical"><TextInput value={profile.vertical} onChange={v => up("vertical", v)} placeholder="32"/></Field><Field label="Shuttle"><TextInput value={profile.shuttle} onChange={v => up("shuttle", v)} placeholder="4.25"/></Field></div>
-          <div className="four"><Field label="Weighted GPA" required><TextInput value={profile.gpaWeighted} onChange={v => up("gpaWeighted", v)} placeholder="4.0"/></Field><Field label="UW GPA"><TextInput value={profile.gpaUnweighted} onChange={v => up("gpaUnweighted", v)} placeholder="3.9"/></Field><Field label="SAT"><TextInput value={profile.sat} onChange={v => up("sat", v)} placeholder="1560"/></Field><Field label="ACT"><TextInput value={profile.act} onChange={v => up("act", v)} placeholder=""/></Field></div>
-          <Field label="Hudl / film link" required><TextInput value={profile.hudlLink} onChange={v => up("hudlLink", v)} placeholder="https://www.hudl.com/profile/..."/></Field>
-          <Field label="Additional film"><TextInput value={profile.additionalFilm} onChange={v => up("additionalFilm", v)} placeholder="YouTube, MaxPreps, camp clips"/></Field>
+          <div className="two"><Field label="First name" required><TextInput value={profile.firstName} onChange={v => up("firstName", v)}/></Field><Field label="Last name" required><TextInput value={profile.lastName} onChange={v => up("lastName", v)}/></Field></div>
+          <div className="three"><Field label="Email" required><TextInput value={profile.email} onChange={v => up("email", v)}/></Field><Field label="Phone"><TextInput value={profile.phone} onChange={v => up("phone", v)}/></Field><Field label="X / Twitter"><TextInput value={profile.xHandle} onChange={v => up("xHandle", v)}/></Field></div>
+          <div className="four"><Field label="High school" required><TextInput value={profile.highSchool} onChange={v => up("highSchool", v)}/></Field><Field label="City"><TextInput value={profile.city} onChange={v => up("city", v)}/></Field><Field label="State"><Select value={profile.state} onChange={v => up("state", v)} options={STATES}/></Field><Field label="Grad year"><TextInput value={profile.gradYear} onChange={v => up("gradYear", v)}/></Field></div>
+          <div className="four"><Field label="Position" required><Select value={profile.position} onChange={v => up("position", v)} options={POSITIONS}/></Field><Field label="Height"><TextInput value={profile.height} onChange={v => up("height", v)}/></Field><Field label="Weight"><TextInput value={profile.weight} onChange={v => up("weight", v)}/></Field><Field label="40"><TextInput value={profile.fortyYard} onChange={v => up("fortyYard", v)}/></Field></div>
+          <div className="four"><Field label="Bench"><TextInput value={profile.benchPress} onChange={v => up("benchPress", v)}/></Field><Field label="Squat"><TextInput value={profile.squat} onChange={v => up("squat", v)}/></Field><Field label="Vertical"><TextInput value={profile.vertical} onChange={v => up("vertical", v)}/></Field><Field label="Shuttle"><TextInput value={profile.shuttle} onChange={v => up("shuttle", v)}/></Field></div>
+          <div className="four"><Field label="Weighted GPA" required><TextInput value={profile.gpaWeighted} onChange={v => up("gpaWeighted", v)}/></Field><Field label="UW GPA"><TextInput value={profile.gpaUnweighted} onChange={v => up("gpaUnweighted", v)}/></Field><Field label="SAT"><TextInput value={profile.sat} onChange={v => up("sat", v)}/></Field><Field label="ACT"><TextInput value={profile.act} onChange={v => up("act", v)}/></Field></div>
+          <Field label="Hudl / film link" required><TextInput value={profile.hudlLink} onChange={v => up("hudlLink", v)}/></Field>
+          <Field label="Additional film"><TextInput value={profile.additionalFilm} onChange={v => up("additionalFilm", v)}/></Field>
           <Field label="Strengths" required><TextArea rows={3} value={profile.strengths} onChange={v => up("strengths", v)} placeholder="What makes you stand out? Position-specific traits, film highlights, captaincy, speed, route running, toughness..."/></Field>
           <Field label="Areas of growth"><TextArea rows={2} value={profile.weaknesses} onChange={v => up("weaknesses", v)} placeholder="What are you actively improving?"/></Field>
           <div className="profileBuilderPanel">
@@ -668,6 +746,22 @@ export default function App() {
       <span>Users must be at least 13.</span>
     </footer>
   </main>;
+}
+
+function CreditPanel({ credits, packs, loadingPack, onBuy }) {
+  if (!packs.length) return null;
+  return <section className="creditPanel">
+    <div>
+      <strong><CreditCard size={17}/>Credits</strong>
+      <span>{credits} remaining. Each generated draft or rewrite uses 1 credit.</span>
+    </div>
+    <div className="creditPackButtons">
+      {packs.map(pack => <button key={pack.id} className="secondary small" disabled={Boolean(loadingPack)} onClick={() => onBuy(pack.id)}>
+        {loadingPack === pack.id ? <RefreshCw className="spin" size={14}/> : <Plus size={14}/>}
+        Buy {pack.label}{pack.priceLabel ? ` - ${pack.priceLabel}` : ""}
+      </button>)}
+    </div>
+  </section>;
 }
 
 function historyStatus(item) {

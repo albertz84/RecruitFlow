@@ -14,10 +14,11 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || "";
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 const SUPABASE_PAGE_SIZE = 1000;
-const STARTING_CREDITS = 25;
+const STARTING_CREDITS = 15;
 
 const memoryUsers = new Map();
 const memoryEmails = [];
+const memoryCreditPurchases = new Set();
 
 async function readJson(filePath, fallback) {
   try {
@@ -293,6 +294,26 @@ async function supabaseRequest(table, { method = "GET", query = {}, body, prefer
   return data;
 }
 
+async function supabaseRpc(functionName, body = {}) {
+  if (!USE_SUPABASE) throw new Error("Supabase is not configured.");
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${functionName}`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    throw new Error(data?.message || data?.hint || `Supabase RPC ${functionName} failed: ${response.status}`);
+  }
+  return data;
+}
+
 async function supabaseSelectAll(table, query = {}) {
   const rows = [];
   for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
@@ -441,6 +462,47 @@ export async function debitUserCredits(userEmail, amount = 1) {
     updated_at: new Date().toISOString(),
     last_seen_at: new Date().toISOString()
   };
+  memoryUsers.set(email, updated);
+  return mapUser(updated);
+}
+
+export async function grantStripeCheckoutCredits({
+  userEmail,
+  credits,
+  stripeSessionId,
+  stripeEventId = "",
+  stripePriceId = "",
+  packId = ""
+}) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  const creditAmount = Math.max(0, Math.floor(Number(credits) || 0));
+  const sessionId = String(stripeSessionId || "").trim();
+  if (!email || !email.includes("@")) throw new Error("A valid user email is required.");
+  if (!creditAmount) throw new Error("A positive credit amount is required.");
+  if (!sessionId) throw new Error("A Stripe checkout session id is required.");
+
+  if (USE_SUPABASE) {
+    const row = await supabaseRpc("grant_credits_for_checkout", {
+      p_gmail_email: email,
+      p_credits: creditAmount,
+      p_stripe_session_id: sessionId,
+      p_stripe_event_id: stripeEventId || null,
+      p_stripe_price_id: stripePriceId || null,
+      p_pack_id: packId || null
+    });
+    return mapUser(Array.isArray(row) ? row[0] : row);
+  }
+
+  if (memoryCreditPurchases.has(sessionId)) return getUserByEmail(email);
+  const user = memoryUsers.get(email) || userRowFromInput({ email });
+  const currentCredits = Number.isFinite(Number(user.credits_remaining)) ? Number(user.credits_remaining) : STARTING_CREDITS;
+  const updated = {
+    ...user,
+    credits_remaining: currentCredits + creditAmount,
+    updated_at: new Date().toISOString(),
+    last_seen_at: new Date().toISOString()
+  };
+  memoryCreditPurchases.add(sessionId);
   memoryUsers.set(email, updated);
   return mapUser(updated);
 }

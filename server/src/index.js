@@ -22,6 +22,7 @@ import { recommendContacts, contactPlanSummary } from "./contactRules.js";
 import { generateDraftsForSchool, rewriteDraft } from "./anthropicClient.js";
 import { importCoachCsv } from "./csvImport.js";
 import { registerAuthRoutes, requireAdmin, requireAuth } from "./auth.js";
+import { handleStripeWebhook, registerBillingRoutes } from "./billing.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -73,9 +74,11 @@ const corsOptions = {
 const app = express();
 app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), handleStripeWebhook);
 app.use(express.json({ limit: "2mb" }));
 app.use(express.text({ type: ["text/csv", "text/plain"], limit: "2mb" }));
 registerAuthRoutes(app);
+registerBillingRoutes(app);
 
 app.get("/health", (req, res) => {
   res.json({
@@ -235,7 +238,7 @@ app.post("/api/generate", requireAuth, async (req, res, next) => {
     }
 
     const currentUser = await getUserByEmail(userEmail);
-    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 25);
+    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 15);
     if (plannedDrafts > currentCredits) {
       return res.status(402).json({
         error: `Not enough credits. You have ${currentCredits} credit${currentCredits === 1 ? "" : "s"} remaining, but this needs ${plannedDrafts}.`,
@@ -323,7 +326,7 @@ app.post("/api/rewrite-draft", requireAuth, async (req, res, next) => {
     if (!school) return res.status(400).json({ error: "school is required" });
     if (!draft) return res.status(400).json({ error: "draft is required" });
     const currentUser = await getUserByEmail(req.authUser.email);
-    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 25);
+    const currentCredits = Number(currentUser?.creditsRemaining ?? req.authUser.creditsRemaining ?? 15);
     if (currentCredits < 1) {
       return res.status(402).json({ error: "Not enough credits. You have 0 credits remaining.", creditsRemaining: 0 });
     }

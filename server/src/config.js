@@ -27,7 +27,14 @@ export const config = {
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   geminiDraftModel: process.env.GEMINI_DRAFT_MODEL || "gemini-2.5-flash-lite",
 
-  maxContactsPerSchool: Number(process.env.MAX_CONTACTS_PER_SCHOOL || 3)
+  maxContactsPerSchool: Number(process.env.MAX_CONTACTS_PER_SCHOOL || 3),
+
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+  stripeSuccessUrl: process.env.STRIPE_SUCCESS_URL || "",
+  stripeCancelUrl: process.env.STRIPE_CANCEL_URL || "",
+  stripeCreditPrice30: process.env.STRIPE_PRICE_30_CREDITS || "",
+  stripeCreditPrice200: process.env.STRIPE_PRICE_200_CREDITS || ""
 };
 
 export function resolvedDraftProvider() {
