@@ -97,29 +97,9 @@ function gmailWebComposeUrl({ to, subject, body, accountEmail }) {
   return `https://mail.google.com/mail/?${params.toString()}`;
 }
 
-function gmailAppComposeUrl({ to, subject, body }) {
-  const params = new URLSearchParams({
-    to: to || "",
-    subject: subject || "",
-    body: body || ""
-  });
-  return `googlegmail://co?${params.toString()}`;
-}
-
-function isMobileBrowser() {
-  if (typeof navigator === "undefined") return false;
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
-}
-
 function openGmailCompose({ to, subject, body, accountEmail }) {
   const webUrl = gmailWebComposeUrl({ to, subject, body, accountEmail });
-  if (!isMobileBrowser()) {
-    window.open(webUrl, "_blank", "noopener,noreferrer");
-    return;
-  }
-
   window.open(webUrl, "_blank", "noopener,noreferrer");
-  window.location.href = gmailAppComposeUrl({ to, subject, body });
 }
 
 function Field({ label, required, children, hint }) {
