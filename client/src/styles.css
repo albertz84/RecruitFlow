@@ -12,21 +12,21 @@
   --text: #142033;
   --muted: #5e6f83;
   --faint: #7d8da0;
-  --teal: #0f9f91;
-  --teal-soft: rgba(15, 159, 145, .12);
+  --teal: #12b9b5;
+  --teal-soft: rgba(18, 185, 181, .13);
   --gold: #b87912;
   --gold-soft: rgba(184, 121, 18, .13);
-  --blue: #326fd1;
+  --blue: #1f66c8;
   --green: #16875b;
   --red: #c83b4d;
-  --teal-text: #08685f;
+  --teal-text: #076d6d;
   --gold-text: #7b520d;
   --blue-text: #285aa8;
   --code-text: #08685f;
   --summary-text: #2a3a4d;
   --shadow: 0 18px 46px rgba(31, 48, 68, .13);
   --body-background:
-    linear-gradient(135deg, rgba(15, 159, 145, .11) 0%, transparent 28%),
+    linear-gradient(135deg, rgba(18, 185, 181, .12) 0%, transparent 28%),
     linear-gradient(225deg, rgba(184, 121, 18, .12) 0%, transparent 30%),
     linear-gradient(180deg, #fbfdff 0%, var(--bg) 56%, #dfe8ef 100%);
   --pattern-background:
@@ -67,11 +67,11 @@
   --text: #f3f6fb;
   --muted: #9ba8ba;
   --faint: #6d7b8f;
-  --teal: #38d9c0;
-  --teal-soft: rgba(56, 217, 192, .14);
+  --teal: #18d4cf;
+  --teal-soft: rgba(24, 212, 207, .15);
   --gold: #f0b84b;
   --gold-soft: rgba(240, 184, 75, .15);
-  --blue: #6ea8ff;
+  --blue: #5e9cff;
   --green: #42d88f;
   --red: #ff6b78;
   --teal-text: var(--teal-text);
@@ -81,7 +81,7 @@
   --summary-text: var(--summary-text);
   --shadow: 0 24px 70px rgba(0, 0, 0, .38);
   --body-background:
-    linear-gradient(135deg, rgba(56, 217, 192, .08) 0%, transparent 24%),
+    linear-gradient(135deg, rgba(24, 212, 207, .09) 0%, transparent 24%),
     linear-gradient(225deg, rgba(240, 184, 75, .1) 0%, transparent 28%),
     linear-gradient(180deg, #111827 0%, var(--bg) 46%, #05070b 100%);
   --pattern-background:
@@ -147,17 +147,22 @@ button { border: 0; }
 }
 .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .logo {
-  width: 46px;
-  height: 46px;
-  border-radius: 8px;
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
   display: grid;
   place-items: center;
-  background:
-    linear-gradient(145deg, rgba(56, 217, 192, .95), rgba(110, 168, 255, .9)),
-    #102033;
-  color: #061014;
-  box-shadow: 0 14px 32px rgba(56, 217, 192, .2);
+  background: #ffffff;
+  border: 1px solid rgba(18, 185, 181, .22);
+  box-shadow: 0 14px 34px rgba(18, 185, 181, .18);
+  overflow: hidden;
   flex: 0 0 auto;
+}
+.logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 h1, h2, h3, h4 { margin: 0; }
 h1, h2, h3 {
