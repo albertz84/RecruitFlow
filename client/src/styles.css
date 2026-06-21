@@ -1190,15 +1190,64 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
 }
 .emptyHistory.compact { min-height: 180px; margin-top: 12px; }
 .emptyHistory strong { color: var(--text); }
+.historyBulkBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px;
+  border: 1px solid rgba(122, 139, 162, .2);
+  border-radius: 8px;
+  background: var(--surface-58);
+}
+.bulkSelect {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+}
+.bulkSelect input,
+.historyCheckbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--teal);
+}
+.bulkCount {
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 13px;
+  margin-right: auto;
+}
+.bulkActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .historyList { display: grid; gap: 12px; }
 .historyItem {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px;
+  grid-template-columns: 28px minmax(0, 1fr) 150px;
   gap: 16px;
   padding: 14px;
   background: var(--surface-62);
   border: 1px solid rgba(122, 139, 162, .2);
   border-radius: 8px;
+}
+.historyItem.selected {
+  border-color: rgba(var(--teal-rgb), .42);
+  box-shadow: 0 0 0 1px rgba(var(--teal-rgb), .16);
+  background: rgba(var(--teal-rgb), .055);
+}
+.historyCheckbox {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 2px;
 }
 .historyMain { min-width: 0; }
 .historyTitle {
@@ -1313,6 +1362,7 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
   .targetSelection.hasItems { grid-template-columns: 1fr; }
   .workspaceBar, .historyItem, .creditPanel { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
   .creditPackButtons { justify-content: flex-start; }
+  .historyCheckbox { justify-content: flex-start; }
   .historyMetaGrid { grid-template-columns: 1fr; }
   .historyActions { flex-direction: row; flex-wrap: wrap; }
   .introPanel { grid-template-columns: 1fr; }
@@ -1329,6 +1379,9 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
   .statusPills { width: 100%; }
   .workspaceBar { align-items: stretch; }
   .gmailInput { width: 100%; }
+  .historyBulkBar { align-items: stretch; flex-direction: column; }
+  .bulkCount { margin-right: 0; }
+  .bulkActions { justify-content: flex-start; }
   .draftTop, .historyTop { flex-direction: column; }
   .draftActions { justify-content: flex-start; }
   .introPanel { padding: 14px; }

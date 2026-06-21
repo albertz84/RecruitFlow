@@ -447,9 +447,12 @@ export default function App() {
     setHistoryLoading(true);
     try {
       const data = await api("/api/email-history");
-      setHistory(data.history || []);
+      const loaded = data.history || [];
+      setHistory(loaded);
+      return loaded;
     } catch (err) {
       setGmailMsg(err.message);
+      return [];
     } finally {
       setHistoryLoading(false);
     }
@@ -501,7 +504,25 @@ export default function App() {
       body: item.email_body || "",
       accountEmail: connectedUser?.email || item.userEmail || ""
     });
-    updateHistoryItem(item.id, { status: "opened_gmail" }).catch(err => setGmailMsg(err.message));
+    if (historyStatus(item) !== "sent") {
+      updateHistoryItem(item.id, { status: "opened_gmail" }).catch(err => setGmailMsg(err.message));
+    }
+  }
+
+  function openHistoryBatchInGmail(items = []) {
+    if (!items.length) return;
+    items.forEach(item => {
+      openGmailCompose({
+        to: item.coach?.email || "",
+        subject: item.email_subject || "",
+        body: item.email_body || "",
+        accountEmail: connectedUser?.email || item.userEmail || ""
+      });
+    });
+    const draftItems = items.filter(item => historyStatus(item) !== "sent");
+    Promise.all(draftItems.map(item => updateHistoryItem(item.id, { status: "opened_gmail" })))
+      .catch(err => setGmailMsg(err.message));
+    setGmailMsg(`Opened ${items.length} Gmail compose ${items.length === 1 ? "window" : "windows"}. Each selected draft opens separately so every coach gets a personalized email.`);
   }
 
   const availableSchools = useMemo(() => (
@@ -588,7 +609,10 @@ export default function App() {
       if (typeof data.creditsRemaining === "number") {
         updateConnectedUser({ creditsRemaining: data.creditsRemaining });
       }
-      if (connectedUser?.email) refreshHistory();
+      if (connectedUser?.email) await refreshHistory();
+      setView("history");
+      const draftCount = (data.results || []).reduce((sum, result) => sum + (result.drafts || []).length, 0);
+      setGmailMsg(`${draftCount} new ${draftCount === 1 ? "draft is" : "drafts are"} ready in Email history.`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -644,6 +668,7 @@ export default function App() {
       onRefresh={() => refreshHistory()}
       onDelete={deleteHistoryItem}
       onOpen={openHistoryInGmail}
+      onOpenMany={openHistoryBatchInGmail}
       onSave={updateHistoryItem}
       onMarkSent={item => updateHistoryItem(item.id, { status: "sent" })}
     /> : <>
@@ -772,11 +797,18 @@ function historyStatus(item) {
   return item.status === "sent" ? "sent" : "draft";
 }
 
-function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSave, onMarkSent }) {
+function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onOpenMany, onSave, onMarkSent }) {
   const [filter, setFilter] = useState("all");
   const [editingId, setEditingId] = useState("");
   const [draftEdit, setDraftEdit] = useState({ email_subject: "", email_body: "" });
   const [savingId, setSavingId] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkAction, setBulkAction] = useState("");
+
+  useEffect(() => {
+    const currentIds = new Set(history.map(item => item.id));
+    setSelectedIds(prev => prev.filter(id => currentIds.has(id)));
+  }, [history]);
 
   if (!user) {
     return <section className="section historyPage">
@@ -792,6 +824,9 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSa
     if (filter === "sent") return historyStatus(item) === "sent";
     return true;
   });
+  const visibleIds = visibleHistory.map(item => item.id);
+  const selectedItems = history.filter(item => selectedIds.includes(item.id));
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id));
 
   function startEditing(item) {
     setEditingId(item.id);
@@ -811,6 +846,41 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSa
     }
   }
 
+  function toggleSelected(id) {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(itemId => itemId !== id) : [...prev, id]);
+  }
+
+  function toggleVisibleSelection() {
+    if (allVisibleSelected) {
+      setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)));
+      return;
+    }
+    setSelectedIds(prev => [...new Set([...prev, ...visibleIds])]);
+  }
+
+  async function runBulk(action) {
+    if (!selectedItems.length) return;
+    if (action === "delete" && !window.confirm(`Delete ${selectedItems.length} selected ${selectedItems.length === 1 ? "draft" : "drafts"}?`)) return;
+    setBulkAction(action);
+    try {
+      if (action === "open") {
+        if (onOpenMany) onOpenMany(selectedItems);
+        else selectedItems.forEach(item => onOpen(item));
+        return;
+      }
+      if (action === "sent") {
+        await Promise.all(selectedItems.map(item => historyStatus(item) === "sent" ? Promise.resolve() : onMarkSent(item)));
+        return;
+      }
+      if (action === "delete") {
+        await Promise.all(selectedItems.map(item => onDelete(item.id)));
+        setSelectedIds([]);
+      }
+    } finally {
+      setBulkAction("");
+    }
+  }
+
   return <section className="section historyPage">
     <div className="historyTop">
       <div>
@@ -824,6 +894,24 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSa
       <button className={filter === "drafts" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("drafts")}><strong>{draftCount}</strong><span>Drafts</span></button>
       <button className={filter === "sent" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("sent")}><strong>{sentCount}</strong><span>Marked sent</span></button>
     </div>
+    {history.length > 0 && <div className="historyBulkBar">
+      <label className="bulkSelect">
+        <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} disabled={!visibleIds.length}/>
+        <span>{allVisibleSelected ? "Clear visible" : "Select visible"}</span>
+      </label>
+      <span className="bulkCount">{selectedItems.length} selected</span>
+      <div className="bulkActions">
+        <button className="secondary small" onClick={() => runBulk("open")} disabled={!selectedItems.length || Boolean(bulkAction)}>
+          {bulkAction === "open" ? <RefreshCw className="spin" size={14}/> : <ExternalLink size={14}/>}Open in Gmail
+        </button>
+        <button className="secondary small" onClick={() => runBulk("sent")} disabled={!selectedItems.length || Boolean(bulkAction)}>
+          {bulkAction === "sent" ? <RefreshCw className="spin" size={14}/> : <Check size={14}/>}Mark sent
+        </button>
+        <button className="danger small" onClick={() => runBulk("delete")} disabled={!selectedItems.length || Boolean(bulkAction)}>
+          {bulkAction === "delete" ? <RefreshCw className="spin" size={14}/> : <Trash2 size={14}/>}Delete
+        </button>
+      </div>
+    </div>}
     {!history.length && <div className="emptyHistory">
       <Mail size={28}/>
       <strong>No generated emails yet</strong>
@@ -838,7 +926,11 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSa
       {visibleHistory.map(item => {
         const status = historyStatus(item);
         const isEditing = editingId === item.id;
-        return <article className="historyItem" key={item.id}>
+        const selected = selectedIds.includes(item.id);
+        return <article className={selected ? "historyItem selected" : "historyItem"} key={item.id}>
+          <label className="historyCheckbox" aria-label={`Select draft for ${item.school?.name || "unknown school"}`}>
+            <input type="checkbox" checked={selected} onChange={() => toggleSelected(item.id)}/>
+          </label>
           <div className="historyMain">
             <div className="historyTitle">
               <strong>{item.school?.name || "Unknown school"}</strong>
