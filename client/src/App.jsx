@@ -509,22 +509,6 @@ export default function App() {
     }
   }
 
-  function openHistoryBatchInGmail(items = []) {
-    if (!items.length) return;
-    items.forEach(item => {
-      openGmailCompose({
-        to: item.coach?.email || "",
-        subject: item.email_subject || "",
-        body: item.email_body || "",
-        accountEmail: connectedUser?.email || item.userEmail || ""
-      });
-    });
-    const draftItems = items.filter(item => historyStatus(item) !== "sent");
-    Promise.all(draftItems.map(item => updateHistoryItem(item.id, { status: "opened_gmail" })))
-      .catch(err => setGmailMsg(err.message));
-    setGmailMsg(`Opened ${items.length} Gmail compose ${items.length === 1 ? "window" : "windows"}. Each selected draft opens separately so every coach gets a personalized email.`);
-  }
-
   const availableSchools = useMemo(() => (
     databaseSchools.filter(s => !schools.some(selected => selected.id === s.id))
   ), [databaseSchools, schools]);
@@ -668,7 +652,6 @@ export default function App() {
       onRefresh={() => refreshHistory()}
       onDelete={deleteHistoryItem}
       onOpen={openHistoryInGmail}
-      onOpenMany={openHistoryBatchInGmail}
       onSave={updateHistoryItem}
       onMarkSent={item => updateHistoryItem(item.id, { status: "sent" })}
     /> : <>
@@ -797,7 +780,7 @@ function historyStatus(item) {
   return item.status === "sent" ? "sent" : "draft";
 }
 
-function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onOpenMany, onSave, onMarkSent }) {
+function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSave, onMarkSent }) {
   const [filter, setFilter] = useState("all");
   const [editingId, setEditingId] = useState("");
   const [draftEdit, setDraftEdit] = useState({ email_subject: "", email_body: "" });
@@ -864,8 +847,9 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onOp
     setBulkAction(action);
     try {
       if (action === "open") {
-        if (onOpenMany) onOpenMany(selectedItems);
-        else selectedItems.forEach(item => onOpen(item));
+        const nextItem = selectedItems[0];
+        onOpen(nextItem);
+        setSelectedIds(prev => prev.filter(id => id !== nextItem.id));
         return;
       }
       if (action === "sent") {
@@ -902,7 +886,7 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onOp
       <span className="bulkCount">{selectedItems.length} selected</span>
       <div className="bulkActions">
         <button className="secondary small" onClick={() => runBulk("open")} disabled={!selectedItems.length || Boolean(bulkAction)}>
-          {bulkAction === "open" ? <RefreshCw className="spin" size={14}/> : <ExternalLink size={14}/>}Open in Gmail
+          {bulkAction === "open" ? <RefreshCw className="spin" size={14}/> : <ExternalLink size={14}/>}Open next in Gmail
         </button>
         <button className="secondary small" onClick={() => runBulk("sent")} disabled={!selectedItems.length || Boolean(bulkAction)}>
           {bulkAction === "sent" ? <RefreshCw className="spin" size={14}/> : <Check size={14}/>}Mark sent
