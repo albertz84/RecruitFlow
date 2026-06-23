@@ -128,10 +128,10 @@ async function callDraftJson({ prompt, system, maxTokens = 2500, temperature = 0
 export async function generateDraftsForSchool({ profile, school, contacts, programSummary }) {
   const plan = contactPlanSummary(profile, contacts);
 
-  const localOutput = () => ({
+  const localOutput = (reason = "") => ({
     program_summary: programSummary || school.programSummary || "Saved database context was used. Add a program summary for stronger personalization.",
     drafts: contacts.map(coach => buildLocalDraft({ profile, school, coach, programSummary })),
-    provider: "local-template",
+    provider: reason ? `local-template:fallback:${reason}` : "local-template",
     draftCached: false
   });
 
@@ -143,41 +143,46 @@ export async function generateDraftsForSchool({ profile, school, contacts, progr
   let providerLabel = provider;
   let usage = null;
 
-  for (const contact of contacts) {
-    const prompt = buildSchoolDraftPrompt({
-      profile,
-      school,
-      contacts: [contact],
-      programSummary,
-      contactPlan: `${plan}\n\nWrite only for this contact now: ${contact.name} — ${contact.title || "Football Staff"}.\nAlready generated angles to avoid repeating: ${summaries.join(" | ") || "none"}`
-    });
-    const result = await callDraftJson({
-      prompt,
-      maxTokens: 1700,
-      temperature: 0.65,
-      schema: draftPackSchema,
-      system: draftSystemPrompt
-    });
+  try {
+    for (const contact of contacts) {
+      const prompt = buildSchoolDraftPrompt({
+        profile,
+        school,
+        contacts: [contact],
+        programSummary,
+        contactPlan: `${plan}\n\nWrite only for this contact now: ${contact.name} — ${contact.title || "Football Staff"}.\nAlready generated angles to avoid repeating: ${summaries.join(" | ") || "none"}`
+      });
+      const result = await callDraftJson({
+        prompt,
+        maxTokens: 1700,
+        temperature: 0.65,
+        schema: draftPackSchema,
+        system: draftSystemPrompt
+      });
 
-    const parsed = result.parsed;
-    const draft = Array.isArray(parsed.drafts) ? parsed.drafts[0] : null;
-    if (!draft?.email_subject || !draft?.email_body) {
-      throw new Error(`AI draft provider did not return a valid draft for ${contact.name || "selected contact"}.`);
+      const parsed = result.parsed;
+      const draft = Array.isArray(parsed.drafts) ? parsed.drafts[0] : null;
+      if (!draft?.email_subject || !draft?.email_body) {
+        throw new Error(`AI draft provider did not return a valid draft for ${contact.name || "selected contact"}.`);
+      }
+
+      drafts.push({
+        coach_id: draft.coach_id || contact.id || null,
+        coach_name: draft.coach_name || contact.name || "Coach",
+        coach_title: draft.coach_title || contact.title || "Football Staff",
+        coach_email: draft.coach_email ?? contact.email ?? null,
+        email_lookup_tip: draft.email_lookup_tip || (contact.email ? "" : school.staffPageUrl || school.questionnaireUrl || "Check the school's football staff directory and recruiting questionnaire."),
+        email_subject: draft.email_subject,
+        email_body: draft.email_body,
+        draft_source: `ai:${result.provider}`
+      });
+      summaries.push(`${contact.title || "contact"}:${draft.email_subject}`);
+      providerLabel = result.provider;
+      usage = result.usage;
     }
-
-    drafts.push({
-      coach_id: draft.coach_id || contact.id || null,
-      coach_name: draft.coach_name || contact.name || "Coach",
-      coach_title: draft.coach_title || contact.title || "Football Staff",
-      coach_email: draft.coach_email ?? contact.email ?? null,
-      email_lookup_tip: draft.email_lookup_tip || (contact.email ? "" : school.staffPageUrl || school.questionnaireUrl || "Check the school's football staff directory and recruiting questionnaire."),
-      email_subject: draft.email_subject,
-      email_body: draft.email_body,
-      draft_source: `ai:${result.provider}`
-    });
-    summaries.push(`${contact.title || "contact"}:${draft.email_subject}`);
-    providerLabel = result.provider;
-    usage = result.usage;
+  } catch (err) {
+    console.warn(`Draft provider failed for ${school?.name || "school"}; using local template fallback.`, err?.message || err);
+    return localOutput(provider);
   }
 
   return {
@@ -190,21 +195,27 @@ export async function generateDraftsForSchool({ profile, school, contacts, progr
 }
 
 export async function rewriteDraft({ profile, school, contact, draft, action }) {
-  const localOutput = () => ({
+  const localOutput = (reason = "") => ({
     draft: buildLocalRewrite({ profile, school, coach: contact, draft, action }),
-    provider: "local-template",
+    provider: reason ? `local-template:fallback:${reason}` : "local-template",
     draftCached: false
   });
 
   if (resolvedDraftProvider() === "local-template") return localOutput();
 
-  const result = await callDraftJson({
-    prompt: buildRewritePrompt({ profile, school, contact, draft, action }),
-    maxTokens: action === "dm_version" ? 900 : 1800,
-    temperature: 0.55,
-    schema: rewriteSchema,
-    system: rewriteSystemPrompt
-  });
+  let result;
+  try {
+    result = await callDraftJson({
+      prompt: buildRewritePrompt({ profile, school, contact, draft, action }),
+      maxTokens: action === "dm_version" ? 900 : 1800,
+      temperature: 0.55,
+      schema: rewriteSchema,
+      system: rewriteSystemPrompt
+    });
+  } catch (err) {
+    console.warn(`Draft rewrite provider failed; using local template fallback.`, err?.message || err);
+    return localOutput(resolvedDraftProvider());
+  }
 
   if (!result) return localOutput();
   const parsed = result.parsed;
