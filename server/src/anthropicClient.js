@@ -64,6 +64,14 @@ function anthropicClient() {
   return new Anthropic({ apiKey: config.anthropicApiKey });
 }
 
+function cleanModelName(model = "") {
+  return String(model || "").trim().replace(/^models\//, "");
+}
+
+function unique(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
+
 async function callAnthropicJson({ prompt, system, maxTokens = 2500, temperature = 0.4, model = config.anthropicDraftModel }) {
   const api = anthropicClient();
   if (!api) throw new Error("ANTHROPIC_API_KEY is not configured.");
@@ -77,9 +85,9 @@ async function callAnthropicJson({ prompt, system, maxTokens = 2500, temperature
   return { parsed: parseJsonText(textFromAnthropicMessage(message)), usage: message.usage || null };
 }
 
-async function callGeminiJson({ prompt, system, maxTokens = 2500, temperature = 0.4, schema = null }) {
+async function callGeminiJson({ prompt, system, maxTokens = 2500, temperature = 0.4, schema = null, model = config.geminiDraftModel }) {
   if (!config.geminiApiKey) throw new Error("GEMINI_API_KEY is not configured.");
-  const geminiModel = String(config.geminiDraftModel || "gemini-2.5-flash-lite").replace(/^models\//, "");
+  const geminiModel = cleanModelName(model || config.geminiDraftModel || "gemini-2.5-flash-lite");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
   const response = await fetch(url, {
     method: "POST",
@@ -112,26 +120,57 @@ async function callGeminiJson({ prompt, system, maxTokens = 2500, temperature = 
   return { parsed: parseJsonText(text), usage: data.usageMetadata || null };
 }
 
-async function callDraftJson({ prompt, system, maxTokens = 2500, temperature = 0.4, schema = null }) {
+function aiDraftTargets() {
   const provider = resolvedDraftProvider();
-  if (provider === "gemini") {
-    const result = await callGeminiJson({ prompt, system, maxTokens, temperature, schema });
-    return { ...result, provider: `gemini:${config.geminiDraftModel}` };
+  const geminiTargets = config.geminiApiKey
+    ? unique([config.geminiDraftModel, ...(config.geminiFallbackModels || [])].map(cleanModelName))
+      .map(model => ({ provider: "gemini", model }))
+    : [];
+  const anthropicTargets = config.anthropicApiKey
+    ? [{ provider: "anthropic", model: config.anthropicDraftModel }]
+    : [];
+
+  if (provider === "gemini") return [...geminiTargets, ...anthropicTargets];
+  if (provider === "anthropic") return [...anthropicTargets, ...geminiTargets];
+  if (provider === "local-template") return [];
+  return [...geminiTargets, ...anthropicTargets];
+}
+
+async function callDraftJson({ prompt, system, maxTokens = 2500, temperature = 0.4, schema = null }) {
+  const targets = aiDraftTargets();
+  if (!targets.length) {
+    throw new Error("No AI draft provider is configured. Set GEMINI_API_KEY or ANTHROPIC_API_KEY.");
   }
-  if (provider === "anthropic") {
-    const result = await callAnthropicJson({ prompt, system, maxTokens, temperature, model: config.anthropicDraftModel });
-    return { ...result, provider: `anthropic:${config.anthropicDraftModel}` };
+
+  const failures = [];
+  for (const target of targets) {
+    try {
+      if (target.provider === "gemini") {
+        const result = await callGeminiJson({ prompt, system, maxTokens, temperature, schema, model: target.model });
+        return { ...result, provider: `gemini:${target.model}` };
+      }
+      if (target.provider === "anthropic") {
+        const result = await callAnthropicJson({ prompt, system, maxTokens, temperature, model: target.model });
+        return { ...result, provider: `anthropic:${target.model}` };
+      }
+    } catch (err) {
+      const label = `${target.provider}:${target.model}`;
+      const message = err?.message || String(err);
+      failures.push(`${label}: ${message}`);
+      console.warn(`AI draft provider failed (${label}); trying next provider if available.`, message);
+    }
   }
-  return null;
+
+  throw new Error(`All AI draft providers failed. ${failures.join(" | ")}`);
 }
 
 export async function generateDraftsForSchool({ profile, school, contacts, programSummary }) {
   const plan = contactPlanSummary(profile, contacts);
 
-  const localOutput = (reason = "") => ({
+  const localOutput = () => ({
     program_summary: programSummary || school.programSummary || "Saved database context was used. Add a program summary for stronger personalization.",
     drafts: contacts.map(coach => buildLocalDraft({ profile, school, coach, programSummary })),
-    provider: reason ? `local-template:fallback:${reason}` : "local-template",
+    provider: "local-template",
     draftCached: false
   });
 
@@ -143,46 +182,41 @@ export async function generateDraftsForSchool({ profile, school, contacts, progr
   let providerLabel = provider;
   let usage = null;
 
-  try {
-    for (const contact of contacts) {
-      const prompt = buildSchoolDraftPrompt({
-        profile,
-        school,
-        contacts: [contact],
-        programSummary,
-        contactPlan: `${plan}\n\nWrite only for this contact now: ${contact.name} — ${contact.title || "Football Staff"}.\nAlready generated angles to avoid repeating: ${summaries.join(" | ") || "none"}`
-      });
-      const result = await callDraftJson({
-        prompt,
-        maxTokens: 1700,
-        temperature: 0.65,
-        schema: draftPackSchema,
-        system: draftSystemPrompt
-      });
+  for (const contact of contacts) {
+    const prompt = buildSchoolDraftPrompt({
+      profile,
+      school,
+      contacts: [contact],
+      programSummary,
+      contactPlan: `${plan}\n\nWrite only for this contact now: ${contact.name} — ${contact.title || "Football Staff"}.\nAlready generated angles to avoid repeating: ${summaries.join(" | ") || "none"}`
+    });
+    const result = await callDraftJson({
+      prompt,
+      maxTokens: 1700,
+      temperature: 0.65,
+      schema: draftPackSchema,
+      system: draftSystemPrompt
+    });
 
-      const parsed = result.parsed;
-      const draft = Array.isArray(parsed.drafts) ? parsed.drafts[0] : null;
-      if (!draft?.email_subject || !draft?.email_body) {
-        throw new Error(`AI draft provider did not return a valid draft for ${contact.name || "selected contact"}.`);
-      }
-
-      drafts.push({
-        coach_id: draft.coach_id || contact.id || null,
-        coach_name: draft.coach_name || contact.name || "Coach",
-        coach_title: draft.coach_title || contact.title || "Football Staff",
-        coach_email: draft.coach_email ?? contact.email ?? null,
-        email_lookup_tip: draft.email_lookup_tip || (contact.email ? "" : school.staffPageUrl || school.questionnaireUrl || "Check the school's football staff directory and recruiting questionnaire."),
-        email_subject: draft.email_subject,
-        email_body: draft.email_body,
-        draft_source: `ai:${result.provider}`
-      });
-      summaries.push(`${contact.title || "contact"}:${draft.email_subject}`);
-      providerLabel = result.provider;
-      usage = result.usage;
+    const parsed = result.parsed;
+    const draft = Array.isArray(parsed.drafts) ? parsed.drafts[0] : null;
+    if (!draft?.email_subject || !draft?.email_body) {
+      throw new Error(`AI draft provider did not return a valid draft for ${contact.name || "selected contact"}.`);
     }
-  } catch (err) {
-    console.warn(`Draft provider failed for ${school?.name || "school"}; using local template fallback.`, err?.message || err);
-    return localOutput(provider);
+
+    drafts.push({
+      coach_id: draft.coach_id || contact.id || null,
+      coach_name: draft.coach_name || contact.name || "Coach",
+      coach_title: draft.coach_title || contact.title || "Football Staff",
+      coach_email: draft.coach_email ?? contact.email ?? null,
+      email_lookup_tip: draft.email_lookup_tip || (contact.email ? "" : school.staffPageUrl || school.questionnaireUrl || "Check the school's football staff directory and recruiting questionnaire."),
+      email_subject: draft.email_subject,
+      email_body: draft.email_body,
+      draft_source: `ai:${result.provider}`
+    });
+    summaries.push(`${contact.title || "contact"}:${draft.email_subject}`);
+    providerLabel = result.provider;
+    usage = result.usage;
   }
 
   return {
@@ -195,27 +229,21 @@ export async function generateDraftsForSchool({ profile, school, contacts, progr
 }
 
 export async function rewriteDraft({ profile, school, contact, draft, action }) {
-  const localOutput = (reason = "") => ({
+  const localOutput = () => ({
     draft: buildLocalRewrite({ profile, school, coach: contact, draft, action }),
-    provider: reason ? `local-template:fallback:${reason}` : "local-template",
+    provider: "local-template",
     draftCached: false
   });
 
   if (resolvedDraftProvider() === "local-template") return localOutput();
 
-  let result;
-  try {
-    result = await callDraftJson({
-      prompt: buildRewritePrompt({ profile, school, contact, draft, action }),
-      maxTokens: action === "dm_version" ? 900 : 1800,
-      temperature: 0.55,
-      schema: rewriteSchema,
-      system: rewriteSystemPrompt
-    });
-  } catch (err) {
-    console.warn(`Draft rewrite provider failed; using local template fallback.`, err?.message || err);
-    return localOutput(resolvedDraftProvider());
-  }
+  const result = await callDraftJson({
+    prompt: buildRewritePrompt({ profile, school, contact, draft, action }),
+    maxTokens: action === "dm_version" ? 900 : 1800,
+    temperature: 0.55,
+    schema: rewriteSchema,
+    system: rewriteSystemPrompt
+  });
 
   if (!result) return localOutput();
   const parsed = result.parsed;

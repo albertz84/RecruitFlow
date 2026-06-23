@@ -4,6 +4,13 @@ dotenv.config();
 
 const requestedDraftProvider = String(process.env.DRAFT_PROVIDER || "auto").toLowerCase();
 
+function envList(value = "") {
+  return String(value || "")
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
 export const config = {
   port: Number(process.env.PORT || 3000),
   host: process.env.HOST || "0.0.0.0",
@@ -26,6 +33,7 @@ export const config = {
   draftProvider: requestedDraftProvider,
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   geminiDraftModel: process.env.GEMINI_DRAFT_MODEL || "gemini-2.5-flash-lite",
+  geminiFallbackModels: envList(process.env.GEMINI_FALLBACK_MODELS || "gemini-2.5-flash"),
 
   maxContactsPerSchool: Number(process.env.MAX_CONTACTS_PER_SCHOOL || 3),
 
