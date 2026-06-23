@@ -101,6 +101,7 @@ app.get("/api/health", (req, res) => {
     geminiApiKeyConfigured: Boolean(config.geminiApiKey),
     anthropicApiKeyConfigured: Boolean(config.anthropicApiKey),
     geminiDraftModel: config.geminiDraftModel,
+    geminiFallbackModels: config.geminiFallbackModels,
     draftProvider,
     dataStore: dataStoreStatus()
   });
