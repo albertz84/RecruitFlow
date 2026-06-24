@@ -33,7 +33,7 @@ export const config = {
   draftProvider: requestedDraftProvider,
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   geminiDraftModel: process.env.GEMINI_DRAFT_MODEL || "gemini-2.5-flash-lite",
-  geminiFallbackModels: envList(process.env.GEMINI_FALLBACK_MODELS || "gemini-2.5-flash"),
+  geminiFallbackModels: envList(process.env.GEMINI_FALLBACK_MODELS || "gemini-2.5-flash,gemini-2.0-flash"),
 
   maxContactsPerSchool: Number(process.env.MAX_CONTACTS_PER_SCHOOL || 3),
 
