@@ -51,6 +51,15 @@ function parseJsonText(text) {
   throw new Error("Model did not return valid JSON");
 }
 
+function parseJsonTextWithContext(text) {
+  try {
+    return parseJsonText(text);
+  } catch (err) {
+    err.rawText = String(text || "");
+    throw err;
+  }
+}
+
 function textFromAnthropicMessage(message) {
   return (message.content || [])
     .filter(block => block.type === "text")
@@ -117,6 +126,56 @@ async function callGeminiJson({ prompt, system, maxTokens = 2500, temperature = 
     const reason = candidate?.finishReason ? ` Finish reason: ${candidate.finishReason}.` : "";
     throw new Error(`Gemini returned no JSON draft text.${reason}`);
   }
+  try {
+    return { parsed: parseJsonTextWithContext(text), usage: data.usageMetadata || null };
+  } catch (err) {
+    const repaired = await repairGeminiJson({
+      model: geminiModel,
+      schema,
+      rawText: err.rawText || text
+    });
+    return {
+      parsed: repaired.parsed,
+      usage: data.usageMetadata || repaired.usage || null,
+      repaired: true
+    };
+  }
+}
+
+async function repairGeminiJson({ model, schema, rawText }) {
+  const repairPrompt = `Return only a valid JSON object that matches this schema.
+
+Schema:
+${JSON.stringify(schema || {}, null, 2)}
+
+Malformed model output:
+${String(rawText || "").slice(0, 12000)}`;
+
+  const geminiModel = cleanModelName(model || config.geminiDraftModel || "gemini-2.5-flash-lite");
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": config.geminiApiKey
+    },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: "You repair malformed AI output into strict JSON. Return only JSON and no prose." }] },
+      contents: [{ role: "user", parts: [{ text: repairPrompt }] }],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 2200,
+        responseMimeType: "application/json",
+        ...(schema ? { responseJsonSchema: schema } : {})
+      }
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = data?.error?.message || `Gemini JSON repair failed: ${response.status}`;
+    throw new Error(message);
+  }
+  const text = (data.candidates?.[0]?.content?.parts || []).map(part => part.text || "").join("\n").trim();
   return { parsed: parseJsonText(text), usage: data.usageMetadata || null };
 }
 
@@ -161,7 +220,10 @@ async function callDraftJson({ prompt, system, maxTokens = 2500, temperature = 0
     }
   }
 
-  throw new Error(`All AI draft providers failed. ${failures.join(" | ")}`);
+  console.error(`All AI draft providers failed. ${failures.join(" | ")}`);
+  const err = new Error("AI draft generation is temporarily unavailable. Please try again in a few minutes.");
+  err.statusCode = 503;
+  throw err;
 }
 
 export async function generateDraftsForSchool({ profile, school, contacts, programSummary }) {
