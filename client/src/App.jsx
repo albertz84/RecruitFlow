@@ -196,6 +196,16 @@ function xUrlFromHandle(handle = "") {
   return cleanHandle ? `https://x.com/${cleanHandle}` : "";
 }
 
+function xDmOpenUrl(item) {
+  const text = item?.dmBody || "";
+  const xUserId = item?.coach?.xUserId || "";
+  if (xUserId) {
+    const params = new URLSearchParams({ recipient_id: xUserId, text });
+    return `https://x.com/messages/compose?${params.toString()}`;
+  }
+  return item?.coach?.xUrl || xUrlFromHandle(item?.coach?.xHandle || "");
+}
+
 function CoachXLink({ handle, url }) {
   const href = url || xUrlFromHandle(handle);
   const label = handle || (href ? `@${href.split("/").filter(Boolean).pop()}` : "");
@@ -842,6 +852,7 @@ export default function App() {
       onDelete={deleteDmItem}
       onSend={sendDm}
       onSendBatch={sendDmBatch}
+      onNotice={setGmailMsg}
     /> : <>
     <div className="grid">
       <div className="leftCol">
@@ -1176,7 +1187,7 @@ function dmStatusLabel(item) {
   return "draft";
 }
 
-function DmPage({ user, account, configured, history, loading, actionLoading, onRefresh, onConnect, onSave, onDelete, onSend, onSendBatch }) {
+function DmPage({ user, account, configured, history, loading, actionLoading, onRefresh, onConnect, onSave, onDelete, onSend, onSendBatch, onNotice }) {
   const [filter, setFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState([]);
   const [editingId, setEditingId] = useState("");
@@ -1230,11 +1241,24 @@ function DmPage({ user, account, configured, history, loading, actionLoading, on
     setEditingId("");
   }
 
+  async function openManualX(item) {
+    try {
+      await navigator.clipboard.writeText(item.dmBody || "");
+      onNotice?.(item.coach?.xUserId
+        ? "DM copied and X compose opened. Review and send it from X."
+        : "DM copied. X profile opened because this coach does not have an X user ID saved yet.");
+    } catch {
+      onNotice?.("X opened. Copy the DM text manually if your browser blocked clipboard access.");
+    }
+    const url = xDmOpenUrl(item);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   return <section className="section historyPage">
     <div className="historyTop">
       <div>
         <h2><MessageCircle size={18}/>X DMs</h2>
-        <p className="muted">DM drafts cost 0.5 credit each. Review every message before sending from your connected X account.</p>
+        <p className="muted">DM drafts cost 0.5 credit each. Open in X copies the message for manual sending; automatic send requires a connected X account.</p>
       </div>
       <div className="historyTopActions">
         {!account && <button className="secondary" disabled={!configured} onClick={onConnect}><AtSign size={16}/>{configured ? "Connect X" : "X not configured"}</button>}
@@ -1244,8 +1268,8 @@ function DmPage({ user, account, configured, history, loading, actionLoading, on
     {account && <p className="inlineNotice compactInline"><Check size={15}/>Sending as @{account.username}</p>}
     {!account && <div className="emptyHistory compact">
       <AtSign size={24}/>
-      <strong>Connect X to send DMs</strong>
-      <span>You can draft DMs before connecting, but sending requires X DM permissions.</span>
+      <strong>Manual X sending is available</strong>
+      <span>Use Open in X to copy the draft and send manually. Connect X only for automatic sends.</span>
     </div>}
     <div className="historySummary">
       <button className={filter === "all" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("all")}><strong>{history.length}</strong><span>All DMs</span></button>
@@ -1260,6 +1284,14 @@ function DmPage({ user, account, configured, history, loading, actionLoading, on
       </label>
       <span className="bulkCount">{selectedItems.length} selected</span>
       <div className="bulkActions">
+        <button className="secondary small" onClick={() => {
+          const nextItem = selectedItems[0];
+          if (!nextItem) return;
+          openManualX(nextItem);
+          setSelectedIds(prev => prev.filter(id => id !== nextItem.id));
+        }} disabled={!selectedItems.length || Boolean(actionLoading)}>
+          <ExternalLink size={14}/>Open next in X
+        </button>
         <button className="secondary small" onClick={() => onSendBatch(sendableSelectedIds)} disabled={!account || !sendableSelectedIds.length || Boolean(actionLoading)}>
           {actionLoading === "batch-send" ? <RefreshCw className="spin" size={14}/> : <Send size={14}/>}Send selected
         </button>
@@ -1312,7 +1344,7 @@ function DmPage({ user, account, configured, history, loading, actionLoading, on
               <button className="secondary small" onClick={() => saveEdit(item)}><Check size={14}/>Save edits</button>
               <button className="secondary small" onClick={() => setEditingId("")}>Cancel</button>
             </> : <button className="secondary small" onClick={() => startEditing(item)}><Copy size={14}/>Edit DM</button>}
-            {item.coach?.xHandle && <a className="secondary small" href={item.coach.xUrl || xUrlFromHandle(item.coach.xHandle)} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/>Open X</a>}
+            {item.coach?.xHandle && <button className="secondary small" onClick={() => openManualX(item)}><ExternalLink size={14}/>Open in X</button>}
             <button className="danger small" onClick={() => onDelete(item.id)}><Trash2 size={14}/>Delete</button>
           </div>
         </article>;
