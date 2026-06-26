@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Clock, Copy, CreditCard, ExternalLink, Filter, History, LogOut, Mail, MapPin, Moon, Plus, RefreshCw, Search, Sun, Trash2, Users, X } from "lucide-react";
+import { AtSign, Check, Clock, Copy, CreditCard, ExternalLink, Filter, History, LogOut, Mail, MapPin, MessageCircle, Moon, Plus, RefreshCw, Search, Send, Sun, Trash2, Users, X } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
@@ -273,6 +273,11 @@ export default function App() {
   const [gmailMsg, setGmailMsg] = useState("");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [dmHistory, setDmHistory] = useState([]);
+  const [dmLoading, setDmLoading] = useState(false);
+  const [xAccount, setXAccount] = useState(null);
+  const [xConfigured, setXConfigured] = useState(false);
+  const [dmActionLoading, setDmActionLoading] = useState("");
   const [billingConfig, setBillingConfig] = useState({ enabled: false, packs: [] });
   const [checkoutLoading, setCheckoutLoading] = useState("");
 
@@ -301,6 +306,16 @@ export default function App() {
 
   useEffect(() => {
     if (connectedUser?.email) refreshHistory();
+  }, [connectedUser?.email]);
+
+  useEffect(() => {
+    if (connectedUser?.email) {
+      refreshXAccount();
+      refreshDmHistory();
+    } else {
+      setXAccount(null);
+      setDmHistory([]);
+    }
   }, [connectedUser?.email]);
 
   useEffect(() => {
@@ -382,9 +397,11 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("auth") === "success") setGmailMsg("Signed in with Google.");
       if (params.get("auth") === "error") setGmailMsg(params.get("message") || "Google sign-in failed.");
+      if (params.get("x") === "success") setGmailMsg("X account connected.");
+      if (params.get("x") === "error") setGmailMsg(params.get("message") || "X connection failed.");
       if (params.get("checkout") === "success") setGmailMsg("Payment complete. Credits may take a moment to appear after Stripe confirms the purchase.");
       if (params.get("checkout") === "canceled") setGmailMsg("Checkout canceled. No credits were added.");
-      if (params.has("auth") || params.has("checkout")) {
+      if (params.has("auth") || params.has("checkout") || params.has("x")) {
         window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash || ""}`);
       }
       setAuthReady(true);
@@ -420,6 +437,8 @@ export default function App() {
     localStorage.removeItem("recruitflow:gmailUser");
     setConnectedUser(null);
     setHistory([]);
+    setDmHistory([]);
+    setXAccount(null);
     setGmailMsg("");
   }
 
@@ -455,6 +474,153 @@ export default function App() {
       return [];
     } finally {
       setHistoryLoading(false);
+    }
+  }
+
+  async function refreshXAccount() {
+    if (!connectedUser?.email) return;
+    try {
+      const data = await api("/api/x/me");
+      setXConfigured(Boolean(data.configured));
+      setXAccount(data.account || null);
+    } catch {
+      setXConfigured(false);
+      setXAccount(null);
+    }
+  }
+
+  async function connectX() {
+    if (!connectedUser?.email) {
+      setGmailMsg("Sign in with Google before connecting X.");
+      return;
+    }
+    if (!xConfigured) {
+      setGmailMsg("X DM sending is not configured on the server yet.");
+      return;
+    }
+    window.location.href = `${API_BASE}/api/auth/x`;
+  }
+
+  async function disconnectX() {
+    try {
+      await api("/api/x/disconnect", { method: "POST" });
+    } catch (err) {
+      setGmailMsg(err.message);
+    }
+    setXAccount(null);
+  }
+
+  async function refreshDmHistory() {
+    if (!connectedUser?.email) return [];
+    setDmLoading(true);
+    try {
+      const data = await api("/api/dm-history");
+      const loaded = data.history || [];
+      setDmHistory(loaded);
+      return loaded;
+    } catch (err) {
+      setGmailMsg(err.message);
+      return [];
+    } finally {
+      setDmLoading(false);
+    }
+  }
+
+  async function updateDmItem(id, updates) {
+    const data = await api(`/api/dm-history/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(updates)
+    });
+    setDmHistory(prev => prev.map(item => item.id === id ? data.item : item));
+    return data.item;
+  }
+
+  async function deleteDmItem(id) {
+    await api(`/api/dm-history/${id}`, { method: "DELETE" });
+    setDmHistory(prev => prev.filter(item => item.id !== id));
+  }
+
+  async function generateTargetDms() {
+    setError("");
+    if (!connectedUser?.email) {
+      setError("Sign in with Google before generating DMs.");
+      return;
+    }
+    if (missing.length) {
+      setError(`Missing: ${missing.join(", ")}`);
+      return;
+    }
+    setDmActionLoading("generate-targets");
+    try {
+      const data = await api("/api/dm-drafts", {
+        method: "POST",
+        body: JSON.stringify({ profile, schools, options: { maxContacts } })
+      });
+      setDmHistory(prev => [...(data.history || []), ...prev]);
+      if (typeof data.creditsRemaining === "number") updateConnectedUser({ creditsRemaining: data.creditsRemaining });
+      setView("dms");
+      const count = data.history?.length || 0;
+      const skipped = data.skipped?.length || 0;
+      setGmailMsg(`${count} X DM ${count === 1 ? "draft" : "drafts"} generated.${skipped ? ` ${skipped} school/contact ${skipped === 1 ? "was" : "were"} skipped because no X handle was available.` : ""}`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDmActionLoading("");
+    }
+  }
+
+  async function generateDmFollowups(emailIds) {
+    if (!emailIds.length) return;
+    setDmActionLoading("followups");
+    try {
+      const data = await api("/api/dm-followups", {
+        method: "POST",
+        body: JSON.stringify({ emailIds })
+      });
+      setDmHistory(prev => [...(data.history || []), ...prev]);
+      if (typeof data.creditsRemaining === "number") updateConnectedUser({ creditsRemaining: data.creditsRemaining });
+      setView("dms");
+      const count = data.history?.length || 0;
+      setGmailMsg(`${count} X follow-up DM ${count === 1 ? "draft" : "drafts"} generated.`);
+    } catch (err) {
+      setGmailMsg(err.message);
+    } finally {
+      setDmActionLoading("");
+    }
+  }
+
+  async function sendDm(id) {
+    setDmActionLoading(id);
+    try {
+      const data = await api("/api/dm-send", {
+        method: "POST",
+        body: JSON.stringify({ id })
+      });
+      if (data.item) setDmHistory(prev => prev.map(item => item.id === id ? data.item : item));
+      setGmailMsg(data.ok ? "X DM sent." : data.error || "X DM could not be sent.");
+    } catch (err) {
+      setGmailMsg(err.message);
+    } finally {
+      setDmActionLoading("");
+    }
+  }
+
+  async function sendDmBatch(ids) {
+    if (!ids.length) return;
+    setDmActionLoading("batch-send");
+    try {
+      const data = await api("/api/dm-send-batch", {
+        method: "POST",
+        body: JSON.stringify({ ids })
+      });
+      setDmHistory(data.history || []);
+      const sent = (data.results || []).filter(result => result.ok).length;
+      const failed = (data.results || []).length - sent;
+      setGmailMsg(`${sent} X DM${sent === 1 ? "" : "s"} sent.${failed ? ` ${failed} failed or were blocked.` : ""}`);
+    } catch (err) {
+      setGmailMsg(err.message);
+    } finally {
+      setDmActionLoading("");
     }
   }
 
@@ -622,11 +788,12 @@ export default function App() {
       <div className="viewTabs">
         <button className={view === "compose" ? "tab active" : "tab"} onClick={() => setView("compose")}><Mail size={16}/>Compose</button>
         <button className={view === "history" ? "tab active" : "tab"} onClick={() => setView("history")}><History size={16}/>Email history</button>
+        <button className={view === "dms" ? "tab active" : "tab"} onClick={() => setView("dms")}><MessageCircle size={16}/>X DMs</button>
       </div>
       <div className="gmailConnect">
         {connectedUser ? <>
           <span className="connectedUser"><Check size={15}/>{connectedUser.email}</span>
-          <span className="creditBadge">{connectedUser.creditsRemaining ?? 15} credits</span>
+          <span className="creditBadge">{formatCredits(connectedUser.creditsRemaining ?? 15)} credits</span>
           <button className="secondary small" onClick={disconnectGmail}><LogOut size={14}/>Disconnect</button>
         </> : <>
           <button className="primary smallBtn" onClick={connectGmail} disabled={!authReady || !googleAuthConfigured}><Mail size={15}/>{!authReady ? "Checking login..." : googleAuthConfigured ? "Sign in with Google" : "Google login not configured"}</button>
@@ -638,6 +805,12 @@ export default function App() {
       </div>
     </div>
     {gmailMsg && <p className="inlineNotice">{gmailMsg}</p>}
+    {connectedUser && <XConnectPanel
+      configured={xConfigured}
+      account={xAccount}
+      onConnect={connectX}
+      onDisconnect={disconnectX}
+    />}
     {connectedUser && billingConfig.enabled && <CreditPanel
       credits={connectedUser.creditsRemaining ?? 15}
       packs={billingConfig.packs || []}
@@ -654,6 +827,21 @@ export default function App() {
       onOpen={openHistoryInGmail}
       onSave={updateHistoryItem}
       onMarkSent={item => updateHistoryItem(item.id, { status: "sent" })}
+      onGenerateDmFollowups={generateDmFollowups}
+      dmActionLoading={dmActionLoading}
+    /> : view === "dms" ? <DmPage
+      user={connectedUser}
+      account={xAccount}
+      configured={xConfigured}
+      history={dmHistory}
+      loading={dmLoading}
+      actionLoading={dmActionLoading}
+      onRefresh={refreshDmHistory}
+      onConnect={connectX}
+      onSave={updateDmItem}
+      onDelete={deleteDmItem}
+      onSend={sendDm}
+      onSendBatch={sendDmBatch}
     /> : <>
     <div className="grid">
       <div className="leftCol">
@@ -746,6 +934,10 @@ export default function App() {
           {error && <p className="error">{error}</p>}
           {loading && <GenerationWait schoolCount={schools.length} maxContacts={maxContacts} provider={health?.draftProvider || "local-template"} elapsedSeconds={elapsedSeconds}/>}
           <button className="generate" disabled={loading} onClick={generate}>{loading ? <RefreshCw className="spin" size={18}/> : <Mail size={18}/>} {loading ? "Generating..." : `Generate contact plans + AI emails`}</button>
+          <button className="secondary generateAlt" disabled={loading || dmActionLoading === "generate-targets"} onClick={generateTargetDms}>
+            {dmActionLoading === "generate-targets" ? <RefreshCw className="spin" size={18}/> : <MessageCircle size={18}/>}
+            {dmActionLoading === "generate-targets" ? "Generating X DMs..." : "Generate X DM drafts"}
+          </button>
         </Section>
       </div>
     </div>
@@ -765,7 +957,7 @@ function CreditPanel({ credits, packs, loadingPack, onBuy }) {
   return <section className="creditPanel">
     <div>
       <strong><CreditCard size={17}/>Credits</strong>
-      <span>{credits} remaining. Each generated draft or rewrite uses 1 credit.</span>
+      <span>{formatCredits(credits)} remaining. Emails use 1 credit. X DM drafts use 0.5 credit.</span>
     </div>
     <div className="creditPackButtons">
       {packs.map(pack => <button key={pack.id} className="secondary small" disabled={Boolean(loadingPack)} onClick={() => onBuy(pack.id)}>
@@ -776,11 +968,32 @@ function CreditPanel({ credits, packs, loadingPack, onBuy }) {
   </section>;
 }
 
+function formatCredits(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "0";
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function XConnectPanel({ configured, account, onConnect, onDisconnect }) {
+  return <section className="xConnectPanel">
+    <div>
+      <strong><AtSign size={17}/>X DM sending</strong>
+      <span>{account ? `Connected as @${account.username}` : "Connect X to send reviewed DM drafts from your own account."}</span>
+    </div>
+    <div className="xConnectActions">
+      {account ? <>
+        <a className="secondary small" href={`https://x.com/${account.username}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/>View X</a>
+        <button className="secondary small" onClick={onDisconnect}><LogOut size={14}/>Disconnect X</button>
+      </> : <button className="secondary small" disabled={!configured} onClick={onConnect}><AtSign size={14}/>{configured ? "Connect X" : "X not configured"}</button>}
+    </div>
+  </section>;
+}
+
 function historyStatus(item) {
   return item.status === "sent" ? "sent" : "draft";
 }
 
-function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSave, onMarkSent }) {
+function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSave, onMarkSent, onGenerateDmFollowups, dmActionLoading }) {
   const [filter, setFilter] = useState("all");
   const [editingId, setEditingId] = useState("");
   const [draftEdit, setDraftEdit] = useState({ email_subject: "", email_body: "" });
@@ -891,6 +1104,9 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSa
         <button className="secondary small" onClick={() => runBulk("sent")} disabled={!selectedItems.length || Boolean(bulkAction)}>
           {bulkAction === "sent" ? <RefreshCw className="spin" size={14}/> : <Check size={14}/>}Mark sent
         </button>
+        <button className="secondary small" onClick={() => onGenerateDmFollowups?.(selectedIds)} disabled={!selectedItems.length || Boolean(bulkAction) || dmActionLoading === "followups"}>
+          {dmActionLoading === "followups" ? <RefreshCw className="spin" size={14}/> : <MessageCircle size={14}/>}Draft X follow-ups
+        </button>
         <button className="danger small" onClick={() => runBulk("delete")} disabled={!selectedItems.length || Boolean(bulkAction)}>
           {bulkAction === "delete" ? <RefreshCw className="spin" size={14}/> : <Trash2 size={14}/>}Delete
         </button>
@@ -943,6 +1159,160 @@ function HistoryPage({ user, history, loading, onRefresh, onDelete, onOpen, onSa
             </> : <button className="secondary small" onClick={() => startEditing(item)}><Copy size={14}/>Edit draft</button>)}
             <button className="secondary small" onClick={() => onMarkSent(item)} disabled={status === "sent"}><Check size={14}/>{status === "sent" ? "Sent" : "Mark as sent"}</button>
             {status === "draft" && <small className="actionHint">Tracker only. Send from Gmail first.</small>}
+            <button className="danger small" onClick={() => onDelete(item.id)}><Trash2 size={14}/>Delete</button>
+          </div>
+        </article>;
+      })}
+    </div>
+  </section>;
+}
+
+function dmStatusLabel(item) {
+  if (item.status === "sent") return "sent";
+  if (item.status === "failed") return "failed";
+  if (item.status === "blocked") return "blocked";
+  if (item.status === "rate_limited") return "rate limited";
+  if (item.status === "queued") return "queued";
+  return "draft";
+}
+
+function DmPage({ user, account, configured, history, loading, actionLoading, onRefresh, onConnect, onSave, onDelete, onSend, onSendBatch }) {
+  const [filter, setFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [editingId, setEditingId] = useState("");
+  const [draftBody, setDraftBody] = useState("");
+
+  useEffect(() => {
+    const currentIds = new Set(history.map(item => item.id));
+    setSelectedIds(prev => prev.filter(id => currentIds.has(id)));
+  }, [history]);
+
+  if (!user) {
+    return <section className="section historyPage">
+      <h2><MessageCircle size={18}/>X DMs</h2>
+      <p className="muted">Sign in with Google before using X DM outreach.</p>
+    </section>;
+  }
+
+  const visibleHistory = history.filter(item => {
+    if (filter === "drafts") return item.status === "draft";
+    if (filter === "sent") return item.status === "sent";
+    if (filter === "needs_attention") return ["failed", "blocked", "rate_limited"].includes(item.status);
+    return true;
+  });
+  const visibleIds = visibleHistory.map(item => item.id);
+  const selectedItems = history.filter(item => selectedIds.includes(item.id));
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id));
+  const sendableSelectedIds = selectedItems.filter(item => item.status !== "sent").map(item => item.id);
+  const sentCount = history.filter(item => item.status === "sent").length;
+  const draftCount = history.filter(item => item.status === "draft").length;
+  const attentionCount = history.filter(item => ["failed", "blocked", "rate_limited"].includes(item.status)).length;
+
+  function toggleSelected(id) {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(itemId => itemId !== id) : [...prev, id]);
+  }
+
+  function toggleVisibleSelection() {
+    if (allVisibleSelected) {
+      setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)));
+      return;
+    }
+    setSelectedIds(prev => [...new Set([...prev, ...visibleIds])]);
+  }
+
+  function startEditing(item) {
+    setEditingId(item.id);
+    setDraftBody(item.dmBody || "");
+  }
+
+  async function saveEdit(item) {
+    await onSave(item.id, { dmBody: draftBody });
+    setEditingId("");
+  }
+
+  return <section className="section historyPage">
+    <div className="historyTop">
+      <div>
+        <h2><MessageCircle size={18}/>X DMs</h2>
+        <p className="muted">DM drafts cost 0.5 credit each. Review every message before sending from your connected X account.</p>
+      </div>
+      <div className="historyTopActions">
+        {!account && <button className="secondary" disabled={!configured} onClick={onConnect}><AtSign size={16}/>{configured ? "Connect X" : "X not configured"}</button>}
+        <button className="secondary" onClick={onRefresh} disabled={loading}>{loading ? <RefreshCw className="spin" size={16}/> : <RefreshCw size={16}/>}Refresh</button>
+      </div>
+    </div>
+    {account && <p className="inlineNotice compactInline"><Check size={15}/>Sending as @{account.username}</p>}
+    {!account && <div className="emptyHistory compact">
+      <AtSign size={24}/>
+      <strong>Connect X to send DMs</strong>
+      <span>You can draft DMs before connecting, but sending requires X DM permissions.</span>
+    </div>}
+    <div className="historySummary">
+      <button className={filter === "all" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("all")}><strong>{history.length}</strong><span>All DMs</span></button>
+      <button className={filter === "drafts" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("drafts")}><strong>{draftCount}</strong><span>Drafts</span></button>
+      <button className={filter === "sent" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("sent")}><strong>{sentCount}</strong><span>Sent</span></button>
+      <button className={filter === "needs_attention" ? "historyMetric active" : "historyMetric"} onClick={() => setFilter("needs_attention")}><strong>{attentionCount}</strong><span>Needs review</span></button>
+    </div>
+    {history.length > 0 && <div className="historyBulkBar">
+      <label className="bulkSelect">
+        <input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleSelection} disabled={!visibleIds.length}/>
+        <span>{allVisibleSelected ? "Clear visible" : "Select visible"}</span>
+      </label>
+      <span className="bulkCount">{selectedItems.length} selected</span>
+      <div className="bulkActions">
+        <button className="secondary small" onClick={() => onSendBatch(sendableSelectedIds)} disabled={!account || !sendableSelectedIds.length || Boolean(actionLoading)}>
+          {actionLoading === "batch-send" ? <RefreshCw className="spin" size={14}/> : <Send size={14}/>}Send selected
+        </button>
+        <button className="danger small" onClick={() => Promise.all(selectedItems.map(item => onDelete(item.id))).then(() => setSelectedIds([]))} disabled={!selectedItems.length || Boolean(actionLoading)}>
+          <Trash2 size={14}/>Delete
+        </button>
+      </div>
+    </div>}
+    {!history.length && <div className="emptyHistory">
+      <MessageCircle size={28}/>
+      <strong>No X DM drafts yet</strong>
+      <span>Generate X DM drafts from target schools or selected email history items.</span>
+    </div>}
+    {history.length > 0 && visibleHistory.length === 0 && <div className="emptyHistory compact">
+      <MessageCircle size={24}/>
+      <strong>No DMs in this view</strong>
+      <span>Switch filters to see the rest of your X DM history.</span>
+    </div>}
+    <div className="historyList">
+      {visibleHistory.map(item => {
+        const selected = selectedIds.includes(item.id);
+        const isEditing = editingId === item.id;
+        const label = dmStatusLabel(item);
+        return <article className={selected ? "historyItem selected" : "historyItem"} key={item.id}>
+          <label className="historyCheckbox" aria-label={`Select DM for ${item.school?.name || "unknown school"}`}>
+            <input type="checkbox" checked={selected} onChange={() => toggleSelected(item.id)}/>
+          </label>
+          <div className="historyMain">
+            <div className="historyTitle">
+              <strong>{item.school?.name || "Unknown school"}</strong>
+              <span className={`statusTag ${item.status || "draft"}`}>{label}</span>
+            </div>
+            <div className="historyMetaGrid">
+              <span><b>Coach</b>{item.coach?.name || "Coach"}{item.coach?.title ? ` · ${item.coach.title}` : ""}</span>
+              <span><b>X</b>{item.coach?.xHandle ? `@${item.coach.xHandle}` : "No handle saved"}<CoachXLink handle={item.coach?.xHandle} url={item.coach?.xUrl}/></span>
+              <span><b>Mode</b>{item.mode === "email_follow_up" ? "Email follow-up" : "Coach DM"}</span>
+            </div>
+            {item.failureReason && <p className="historyNote">{item.failureReason}</p>}
+            {isEditing ? <div className="historyEditor">
+              <Field label="DM body"><TextArea rows={5} value={draftBody} onChange={setDraftBody}/></Field>
+            </div> : <p className="historyBody dmBody">{item.dmBody}</p>}
+            <small>Generated {new Date(item.createdAt).toLocaleString()}{item.sentAt ? ` · Sent ${new Date(item.sentAt).toLocaleString()}` : ""}</small>
+          </div>
+          <div className="historyActions">
+            <button className="primary smallBtn" onClick={() => onSend(item.id)} disabled={!account || item.status === "sent" || Boolean(actionLoading)}>
+              {actionLoading === item.id ? <RefreshCw className="spin" size={14}/> : <Send size={14}/>}
+              {item.status === "sent" ? "Sent" : "Send DM"}
+            </button>
+            {isEditing ? <>
+              <button className="secondary small" onClick={() => saveEdit(item)}><Check size={14}/>Save edits</button>
+              <button className="secondary small" onClick={() => setEditingId("")}>Cancel</button>
+            </> : <button className="secondary small" onClick={() => startEditing(item)}><Copy size={14}/>Edit DM</button>}
+            {item.coach?.xHandle && <a className="secondary small" href={item.coach.xUrl || xUrlFromHandle(item.coach.xHandle)} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/>Open X</a>}
             <button className="danger small" onClick={() => onDelete(item.id)}><Trash2 size={14}/>Delete</button>
           </div>
         </article>;

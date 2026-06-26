@@ -18,6 +18,8 @@ const STARTING_CREDITS = 15;
 
 const memoryUsers = new Map();
 const memoryEmails = [];
+const memoryXAccounts = new Map();
+const memoryDmHistory = [];
 const memoryCreditPurchases = new Set();
 
 async function readJson(filePath, fallback) {
@@ -45,9 +47,19 @@ function parseJson(value, fallback = null) {
   try { return JSON.parse(value); } catch { return fallback; }
 }
 
+function formatCredits(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "0";
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 function xUrl(handle = "") {
   const cleanHandle = String(handle || "").trim().replace(/^@/, "");
   return cleanHandle ? `https://x.com/${cleanHandle}` : "";
+}
+
+function normalizeXHandle(handle = "") {
+  return String(handle || "").trim().replace(/^@/, "").toLowerCase();
 }
 
 function mapSchool(row) {
@@ -114,6 +126,7 @@ function mapCoach(row) {
     phone: row.phone || "",
     xHandle: handle,
     xUrl: row.x_url || row.xUrl || xUrl(handle),
+    xUserId: row.x_user_id || row.xUserId || "",
     positionGroups: parseList(row.position_groups || row.positionGroups || []),
     recruitingStates: parseList(row.recruiting_states || row.recruitingStates || []),
     sourceUrl: row.source_url || row.sourceUrl || "",
@@ -134,6 +147,7 @@ function cleanCoach(raw) {
     email: raw.email || "",
     phone: raw.phone || "",
     xHandle: raw.xHandle || raw.twitter || "",
+    xUserId: raw.xUserId || raw.x_user_id || "",
     positionGroups: Array.isArray(raw.positionGroups) ? raw.positionGroups : parseList(raw.positionGroups),
     recruitingStates: Array.isArray(raw.recruitingStates) ? raw.recruitingStates : parseList(raw.recruitingStates),
     sourceUrl: raw.sourceUrl || "",
@@ -154,6 +168,7 @@ function toCoachRow(coach) {
     email: cleaned.email,
     phone: cleaned.phone,
     x_handle: cleaned.xHandle,
+    x_user_id: coach.xUserId || coach.x_user_id || "",
     position_groups: cleaned.positionGroups,
     recruiting_states: cleaned.recruitingStates,
     source_url: cleaned.sourceUrl,
@@ -263,6 +278,123 @@ function toEmailRow(entry, userId) {
     generated_at: entry.generatedAt || now,
     opened_at: entry.openedAt || null,
     sent_at: entry.sentAt || null,
+    created_at: entry.createdAt || now,
+    updated_at: entry.updatedAt || now
+  };
+}
+
+function mapXAccount(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    xUserId: row.x_user_id || "",
+    username: row.username || "",
+    displayName: row.display_name || "",
+    accessTokenEnc: row.access_token_enc || "",
+    refreshTokenEnc: row.refresh_token_enc || "",
+    expiresAt: row.expires_at || null,
+    scopes: parseJson(row.scopes, []),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function publicXAccount(row) {
+  const account = mapXAccount(row);
+  if (!account) return null;
+  return {
+    xUserId: account.xUserId,
+    username: account.username,
+    displayName: account.displayName,
+    scopes: account.scopes,
+    expiresAt: account.expiresAt,
+    connectedAt: account.createdAt
+  };
+}
+
+function toXAccountRow(account, userId, existing = null) {
+  const now = new Date().toISOString();
+  return {
+    id: existing?.id || account.id || nanoid(),
+    user_id: userId,
+    x_user_id: account.xUserId || account.x_user_id || "",
+    username: account.username || "",
+    display_name: account.displayName || account.display_name || "",
+    access_token_enc: account.accessTokenEnc || account.access_token_enc || "",
+    refresh_token_enc: account.refreshTokenEnc || account.refresh_token_enc || null,
+    expires_at: account.expiresAt || account.expires_at || null,
+    scopes: account.scopes || [],
+    created_at: existing?.created_at || now,
+    updated_at: now
+  };
+}
+
+function mapDm(row, user = null) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    emailHistoryId: row.email_history_id || "",
+    status: row.status || "draft",
+    mode: row.mode || "coach_dm",
+    userEmail: user?.gmail_email || row.gmail_email || "",
+    athleteName: row.athlete_name || "",
+    profileSnapshot: parseJson(row.profile_json, null),
+    school: {
+      id: row.school_id || "",
+      name: row.school_name || "",
+      division: row.school_division || "",
+      conference: row.school_conference || ""
+    },
+    coach: {
+      id: row.coach_id || "",
+      name: row.coach_name || "",
+      title: row.coach_title || "",
+      xHandle: row.coach_x_handle || "",
+      xUrl: row.coach_x_url || xUrl(row.coach_x_handle || ""),
+      xUserId: row.coach_x_user_id || ""
+    },
+    dmBody: row.dm_body || "",
+    provider: row.provider || "",
+    generatedAt: row.generated_at,
+    sentAt: row.sent_at,
+    failedAt: row.failed_at,
+    failureReason: row.failure_reason || "",
+    xDmEventId: row.x_dm_event_id || "",
+    xDmConversationId: row.x_dm_conversation_id || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function toDmRow(entry, userId) {
+  const now = new Date().toISOString();
+  return {
+    id: entry.id || nanoid(),
+    user_id: userId,
+    email_history_id: entry.emailHistoryId || null,
+    status: entry.status || "draft",
+    mode: entry.mode || "coach_dm",
+    athlete_name: entry.athleteName || "",
+    school_id: entry.school?.id || "",
+    school_name: entry.school?.name || "",
+    school_division: entry.school?.division || "",
+    school_conference: entry.school?.conference || "",
+    coach_id: entry.coach?.id || "",
+    coach_name: entry.coach?.name || "",
+    coach_title: entry.coach?.title || "",
+    coach_x_handle: normalizeXHandle(entry.coach?.xHandle || ""),
+    coach_x_url: entry.coach?.xUrl || xUrl(entry.coach?.xHandle || ""),
+    coach_x_user_id: entry.coach?.xUserId || "",
+    dm_body: entry.dmBody || "",
+    provider: entry.provider || "",
+    profile_json: entry.profileSnapshot || null,
+    generated_at: entry.generatedAt || now,
+    sent_at: entry.sentAt || null,
+    failed_at: entry.failedAt || null,
+    failure_reason: entry.failureReason || "",
+    x_dm_event_id: entry.xDmEventId || "",
+    x_dm_conversation_id: entry.xDmConversationId || "",
     created_at: entry.createdAt || now,
     updated_at: entry.updatedAt || now
   };
@@ -425,12 +557,12 @@ export async function updateUserProfile(userEmail, profileSnapshot = {}) {
 
 export async function debitUserCredits(userEmail, amount = 1) {
   const email = String(userEmail || "").trim().toLowerCase();
-  const debitAmount = Math.max(0, Math.floor(Number(amount) || 0));
+  const debitAmount = Math.max(0, Math.round((Number(amount) || 0) * 100) / 100);
   if (!email || !email.includes("@")) throw new Error("A valid user email is required.");
   if (debitAmount === 0) return getUserByEmail(email);
 
   function notEnoughCredits(currentCredits) {
-    const err = new Error(`Not enough credits. You have ${currentCredits} credit${currentCredits === 1 ? "" : "s"} remaining, but this needs ${debitAmount}.`);
+    const err = new Error(`Not enough credits. You have ${formatCredits(currentCredits)} credit${Number(currentCredits) === 1 ? "" : "s"} remaining, but this needs ${formatCredits(debitAmount)}.`);
     err.statusCode = 402;
     return err;
   }
@@ -445,7 +577,7 @@ export async function debitUserCredits(userEmail, amount = 1) {
       query: { gmail_email: `eq.${email}` },
       prefer: "return=representation",
       body: {
-        credits_remaining: currentCredits - debitAmount,
+        credits_remaining: Math.round((currentCredits - debitAmount) * 100) / 100,
         last_seen_at: new Date().toISOString()
       }
     });
@@ -458,7 +590,7 @@ export async function debitUserCredits(userEmail, amount = 1) {
   if (currentCredits < debitAmount) throw notEnoughCredits(currentCredits);
   const updated = {
     ...user,
-    credits_remaining: currentCredits - debitAmount,
+    credits_remaining: Math.round((currentCredits - debitAmount) * 100) / 100,
     updated_at: new Date().toISOString(),
     last_seen_at: new Date().toISOString()
   };
@@ -649,6 +781,236 @@ export async function deleteEmailHistoryItem(id, userEmail) {
   if (index === -1) return false;
   memoryEmails.splice(index, 1);
   return true;
+}
+
+export async function getXAccount(userEmail, { includeTokens = false } = {}) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  if (!email) return null;
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return null;
+    const rows = await supabaseRequest("user_x_accounts", {
+      query: { select: "*", user_id: `eq.${user.id}`, limit: 1 }
+    });
+    const row = rows?.[0];
+    return includeTokens ? mapXAccount(row) : publicXAccount(row);
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return null;
+  const row = memoryXAccounts.get(user.id);
+  return includeTokens ? mapXAccount(row) : publicXAccount(row);
+}
+
+export async function upsertXAccount(userEmail, account = {}) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) throw new Error("A valid user email is required.");
+
+  const user = await upsertUser({ email, provider: "google-oauth" });
+
+  if (USE_SUPABASE) {
+    const existingRows = await supabaseRequest("user_x_accounts", {
+      query: { select: "*", user_id: `eq.${user.id}`, limit: 1 }
+    });
+    const row = toXAccountRow(account, user.id, existingRows?.[0] || null);
+    const rows = await supabaseRequest("user_x_accounts", {
+      method: "POST",
+      query: { on_conflict: "user_id" },
+      prefer: "resolution=merge-duplicates,return=representation",
+      body: row
+    });
+    return publicXAccount(rows?.[0]);
+  }
+
+  const existing = memoryXAccounts.get(user.id);
+  const row = toXAccountRow(account, user.id, existing);
+  memoryXAccounts.set(user.id, row);
+  return publicXAccount(row);
+}
+
+export async function deleteXAccount(userEmail) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  if (!email) return false;
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return false;
+    const rows = await supabaseRequest("user_x_accounts", {
+      method: "DELETE",
+      query: { user_id: `eq.${user.id}` },
+      prefer: "return=representation"
+    });
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return false;
+  return memoryXAccounts.delete(user.id);
+}
+
+export async function saveDmHistoryEntries(entries = []) {
+  const inserted = [];
+
+  if (USE_SUPABASE) {
+    for (const entry of entries) {
+      const user = await upsertUser({
+        email: entry.userEmail,
+        name: entry.userName,
+        profileSnapshot: entry.profileSnapshot,
+        provider: "google-oauth"
+      });
+      const userRow = {
+        id: user.id,
+        gmail_email: user.email,
+        name: user.name
+      };
+      const rows = await supabaseRequest("dm_history", {
+        method: "POST",
+        prefer: "return=representation",
+        body: toDmRow(entry, user.id)
+      });
+      inserted.push(mapDm(rows?.[0], userRow));
+    }
+    return inserted;
+  }
+
+  for (const entry of entries) {
+    const user = await upsertUser({
+      email: entry.userEmail,
+      name: entry.userName,
+      profileSnapshot: entry.profileSnapshot,
+      provider: "google-oauth"
+    });
+    const userRow = memoryUsers.get(user.email);
+    const row = toDmRow(entry, user.id);
+    memoryDmHistory.push(row);
+    inserted.push(mapDm(row, userRow));
+  }
+  return inserted;
+}
+
+export async function listDmHistory(userEmail) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  if (!email) return [];
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return [];
+    const rows = await supabaseSelectAll("dm_history", {
+      select: "*",
+      user_id: `eq.${user.id}`,
+      order: "created_at.desc"
+    });
+    return rows.map(row => mapDm(row, user));
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return [];
+  return memoryDmHistory
+    .filter(row => row.user_id === user.id)
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .map(row => mapDm(row, user));
+}
+
+export async function getDmHistoryItem(id, userEmail) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  if (!id || !email) return null;
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return null;
+    const rows = await supabaseRequest("dm_history", {
+      query: { select: "*", id: `eq.${id}`, user_id: `eq.${user.id}`, limit: 1 }
+    });
+    return rows?.[0] ? mapDm(rows[0], user) : null;
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return null;
+  const row = memoryDmHistory.find(item => item.id === id && item.user_id === user.id);
+  return row ? mapDm(row, user) : null;
+}
+
+export async function updateDmHistoryItem(id, userEmail, updates = {}) {
+  const email = String(userEmail || "").trim().toLowerCase();
+  const now = new Date().toISOString();
+  const allowedStatuses = new Set(["draft", "queued", "sent", "failed", "blocked", "rate_limited"]);
+
+  function patchBody(existing = {}) {
+    const body = { updated_at: now };
+    if (updates.status) {
+      if (!allowedStatuses.has(updates.status)) throw new Error("Invalid DM history status.");
+      body.status = updates.status;
+    }
+    if (typeof updates.dmBody === "string") body.dm_body = updates.dmBody;
+    if (updates.sentAt) body.sent_at = updates.sentAt;
+    if (updates.failedAt) body.failed_at = updates.failedAt;
+    if (typeof updates.failureReason === "string") body.failure_reason = updates.failureReason;
+    if (updates.xDmEventId) body.x_dm_event_id = updates.xDmEventId;
+    if (updates.xDmConversationId) body.x_dm_conversation_id = updates.xDmConversationId;
+    if (updates.coachXUserId) body.coach_x_user_id = updates.coachXUserId;
+    return { ...existing, ...body };
+  }
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return null;
+    const rows = await supabaseRequest("dm_history", {
+      method: "PATCH",
+      query: { id: `eq.${id}`, user_id: `eq.${user.id}` },
+      prefer: "return=representation",
+      body: patchBody()
+    });
+    return rows?.[0] ? mapDm(rows[0], user) : null;
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return null;
+  const index = memoryDmHistory.findIndex(row => row.id === id && row.user_id === user.id);
+  if (index === -1) return null;
+  memoryDmHistory[index] = patchBody(memoryDmHistory[index]);
+  return mapDm(memoryDmHistory[index], user);
+}
+
+export async function deleteDmHistoryItem(id, userEmail) {
+  const email = String(userEmail || "").trim().toLowerCase();
+
+  if (USE_SUPABASE) {
+    const user = await supabaseGetUserRowByEmail(email);
+    if (!user) return false;
+    const rows = await supabaseRequest("dm_history", {
+      method: "DELETE",
+      query: { id: `eq.${id}`, user_id: `eq.${user.id}` },
+      prefer: "return=representation"
+    });
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
+  const user = memoryUsers.get(email);
+  if (!user) return false;
+  const index = memoryDmHistory.findIndex(row => row.id === id && row.user_id === user.id);
+  if (index === -1) return false;
+  memoryDmHistory.splice(index, 1);
+  return true;
+}
+
+export async function recentSentDmForCoach(userEmail, coachId, xHandle, days = 7) {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const normalizedHandle = normalizeXHandle(xHandle);
+  const items = await listDmHistory(userEmail);
+  return items.find(item => {
+    if (item.status !== "sent" || !item.sentAt) return false;
+    if (new Date(item.sentAt).getTime() < cutoff) return false;
+    return (coachId && item.coach?.id === coachId) || (normalizedHandle && normalizeXHandle(item.coach?.xHandle) === normalizedHandle);
+  }) || null;
+}
+
+export async function getEmailHistoryItemsByIds(ids = [], userEmail) {
+  const wanted = new Set(ids.map(String));
+  if (!wanted.size) return [];
+  const items = await listEmailHistory(userEmail);
+  return items.filter(item => wanted.has(String(item.id)));
 }
 
 export async function findSchoolByName(name) {

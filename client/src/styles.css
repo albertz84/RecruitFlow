@@ -1144,7 +1144,7 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
 }
 .historySummary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   margin: 0 0 14px;
 }
@@ -1345,6 +1345,66 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
   background: rgba(66, 216, 143, .09);
   border-color: rgba(66, 216, 143, .24);
 }
+.statusTag.failed,
+.statusTag.blocked,
+.statusTag.rate_limited {
+  color: var(--danger);
+  background: rgba(229, 115, 115, .1);
+  border-color: rgba(229, 115, 115, .24);
+}
+.statusTag.queued {
+  color: var(--gold);
+  background: rgba(var(--gold-rgb), .09);
+  border-color: rgba(var(--gold-rgb), .24);
+}
+.xConnectPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  border: 1px solid rgba(var(--teal-rgb), .22);
+  border-radius: 8px;
+  background: rgba(var(--teal-rgb), .055);
+}
+.xConnectPanel > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.xConnectPanel strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+}
+.xConnectPanel span { color: var(--muted); }
+.xConnectActions,
+.historyTopActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.generateAlt {
+  width: 100%;
+  min-height: 54px;
+  margin-top: 10px;
+  justify-content: center;
+}
+.compactInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin: 0 0 12px;
+}
+.dmBody {
+  max-height: none;
+  white-space: pre-wrap;
+}
 .appFooter {
   display: flex;
   align-items: center;
@@ -1360,8 +1420,9 @@ em { color: var(--gold); font-style: normal; font-size: 12px; }
   .grid { grid-template-columns: 1fr; }
   .contacts { grid-template-columns: 1fr; }
   .targetSelection.hasItems { grid-template-columns: 1fr; }
-  .workspaceBar, .historyItem, .creditPanel { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+  .workspaceBar, .historyItem, .creditPanel, .xConnectPanel { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
   .creditPackButtons { justify-content: flex-start; }
+  .xConnectActions, .historyTopActions { justify-content: flex-start; }
   .historyCheckbox { justify-content: flex-start; }
   .historyMetaGrid { grid-template-columns: 1fr; }
   .historyActions { flex-direction: row; flex-wrap: wrap; }

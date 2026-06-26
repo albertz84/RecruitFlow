@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config, resolvedDraftProvider } from "./config.js";
-import { buildSchoolDraftPrompt, buildRewritePrompt, draftSystemPrompt, rewriteSystemPrompt } from "./prompts.js";
+import { buildSchoolDraftPrompt, buildRewritePrompt, buildDmPrompt, draftSystemPrompt, rewriteSystemPrompt, dmSystemPrompt } from "./prompts.js";
 import { buildLocalDraft, buildLocalRewrite } from "./localTemplate.js";
 import { contactPlanSummary } from "./contactRules.js";
 
@@ -41,6 +41,14 @@ const rewriteSchema = {
     email_lookup_tip: { type: "string" }
   },
   required: ["email_subject", "email_body", "email_lookup_tip"]
+};
+
+const dmSchema = {
+  type: "object",
+  properties: {
+    dm_body: { type: "string" }
+  },
+  required: ["dm_body"]
 };
 
 function parseJsonText(text) {
@@ -326,5 +334,22 @@ export async function rewriteDraft({ profile, school, contact, draft, action }) 
     provider: result.provider,
     usage: result.usage,
     draftCached: false
+  };
+}
+
+export async function generateDmDraft({ profile, school, contact, email = null, mode = "coach_dm" }) {
+  const result = await callDraftJson({
+    prompt: buildDmPrompt({ profile, school, contact, email, mode }),
+    maxTokens: 900,
+    temperature: 0.55,
+    schema: dmSchema,
+    system: dmSystemPrompt
+  });
+  const dmBody = String(result?.parsed?.dm_body || "").trim();
+  if (!dmBody) throw new Error("AI draft provider did not return a valid DM draft.");
+  return {
+    dmBody,
+    provider: result.provider,
+    usage: result.usage || null
   };
 }

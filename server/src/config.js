@@ -20,6 +20,12 @@ export const config = {
   googleClientId: process.env.GOOGLE_CLIENT_ID || "",
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
   googleRedirectUri: process.env.GOOGLE_REDIRECT_URI || `http://localhost:${process.env.PORT || 3000}/api/auth/google/callback`,
+  xClientId: process.env.X_CLIENT_ID || process.env.TWITTER_CLIENT_ID || "",
+  xClientSecret: process.env.X_CLIENT_SECRET || process.env.TWITTER_CLIENT_SECRET || "",
+  xRedirectUri: process.env.X_REDIRECT_URI || process.env.TWITTER_REDIRECT_URI || `http://localhost:${process.env.PORT || 3000}/api/auth/x/callback`,
+  xTokenEncryptionSecret: process.env.X_TOKEN_ENCRYPTION_SECRET || process.env.SESSION_SECRET || "dev-only-change-me",
+  xDmDailyLimit: Number(process.env.X_DM_DAILY_LIMIT || 40),
+  xDmBatchLimit: Number(process.env.X_DM_BATCH_LIMIT || 10),
   adminEmails: String(process.env.ADMIN_EMAILS || "")
     .split(",")
     .map(email => email.trim().toLowerCase())

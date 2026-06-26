@@ -80,6 +80,19 @@ Keep the athlete's voice natural: polished, respectful, and direct, but not corp
 
 Return only the JSON requested by the user prompt.`;
 
+export const dmSystemPrompt = `You write short X/Twitter direct messages for high school football recruiting outreach.
+
+The message should sound like a real athlete wrote it: respectful, direct, and natural. It must not sound like marketing, an agent, a parent, or generic AI text.
+
+Rules:
+- Keep it short enough to read quickly on a phone, usually 320-650 characters.
+- Use only supplied facts. Never invent coach relationships, replies, offers, visits, stats, awards, or conversations.
+- Include the athlete's name, class year, position, school/location when useful, and film link when supplied.
+- Mention the email only when this is an email follow-up.
+- Do not pressure the coach. Ask for film review, feedback, or next steps.
+- Do not use "I hope this message finds you well."
+- Return only the JSON requested by the user prompt.`;
+
 export function buildSchoolDraftPrompt({ profile, school, contacts, programSummary, contactPlan }) {
   return `You are writing recruiting outreach drafts for a high school football player.
 
@@ -216,5 +229,45 @@ Required JSON shape:
   "email_subject": "rewritten subject or DM label",
   "email_body": "rewritten body",
   "email_lookup_tip": "same or updated lookup tip if needed"
+}`;
+}
+
+export function buildDmPrompt({ profile, school, contact, email = null, mode = "coach_dm" }) {
+  return `Write one X/Twitter DM for a high school football recruit.
+
+MODE
+${mode === "email_follow_up" ? "Email follow-up: the athlete has already sent or drafted an email and wants to follow up by X DM." : "Direct coach DM: this may be the first X message to the coach."}
+
+ATHLETE PROFILE
+${JSON.stringify(profile, null, 2)}
+
+PROFILE HIGHLIGHTS
+${buildProfileHighlights(profile)}
+
+SCHOOL
+${JSON.stringify(school, null, 2)}
+
+CONTACT
+${JSON.stringify(contact, null, 2)}
+
+RELATED EMAIL
+${email ? JSON.stringify({
+  subject: email.email_subject,
+  body: email.email_body,
+  status: email.status
+}, null, 2) : "No related email was supplied."}
+
+Rules:
+- Return ONLY valid JSON.
+- Make the DM specific to this coach and school when possible.
+- Keep it natural, short, and respectful.
+- Include the film link if supplied.
+- If mode is email_follow_up, briefly say the athlete sent an email or wanted to follow up on their email.
+- If no X handle is supplied for the coach, still write the DM text but do not invent a handle.
+- Avoid hashtags, hype language, emojis, and long sign-offs.
+
+Required JSON shape:
+{
+  "dm_body": "short DM text"
 }`;
 }
